@@ -18,6 +18,11 @@ const state = {
   isDetailVisible: false,
   isRunning: false,
   stageDropdownOpen: false,
+  currentVersion: "1.2.0",
+  latestVersion: "1.2.0",
+  updateState: "checking",
+  updateMessage: "Checking for updates...",
+  isUpdateAvailable: false,
 };
 
 function icon(name, size = 14) {
@@ -67,6 +72,15 @@ function metric(label, value, note, iconName) {
 }
 
 function header() {
+  const indicatorClass = state.updateState === "available" || state.updateState === "error"
+    ? "danger"
+    : state.updateState === "checking" || state.updateState === "updating"
+      ? "pending"
+      : "latest";
+  const indicatorText = state.updateState === "latest" ? "OK" : "!";
+  const updateText = state.updateState === "updating" ? "Updating..." : "Update";
+  const showUpdatePopup = state.updateState === "available" || state.updateState === "error";
+
   return `
     <div class="topbar">
       <div class="brand">
@@ -78,7 +92,17 @@ function header() {
           <span class="search-icon">${icon("search", 12)}</span>
           <input id="searchInput" class="search-input" value="${escapeHtml(state.searchQuery)}" placeholder="Search automations" />
         </div>
-        <button id="newAutomation" class="new-button">${icon("plus", 12)} New automation</button>
+        <div class="update-wrap">
+          <button id="updateButton" class="update-button">${escapeHtml(updateText)}</button>
+          <button id="updateIndicator" class="update-indicator ${indicatorClass}" title="${escapeHtml(state.updateMessage)}">${indicatorText}</button>
+          ${showUpdatePopup ? `
+            <div class="update-popover">
+              <div class="update-popover-title">${state.updateState === "available" ? "Update available" : "Update check failed"}</div>
+              <div class="update-popover-text">${escapeHtml(state.updateMessage)}</div>
+              ${state.updateState === "available" ? `<div class="update-popover-meta">Current ${escapeHtml(state.currentVersion)} -> ${escapeHtml(state.latestVersion)}</div>` : ""}
+            </div>
+          ` : ""}
+        </div>
       </div>
     </div>
   `;
@@ -129,11 +153,6 @@ function hubView() {
               <span>Stage 1-9 / 1-1</span>
             </div>
           </button>
-
-          <button id="addAutomationCard" class="add-card">
-            <span class="add-icon">${icon("plus", 14)}</span>
-            <span>Add automation</span>
-          </button>
         </div>
       </section>
     </div>
@@ -143,12 +162,15 @@ function hubView() {
 
 function detailHeader() {
   const options = state.stageOptions
-    .map((stage) => `
-      <button class="stage-option ${stage === state.selectedStage ? "active" : ""}" data-stage="${escapeHtml(stage)}">
-        <span>${escapeHtml(stage)}</span>
-        ${stage === state.selectedStage ? '<span class="stage-check">✓</span>' : ""}
-      </button>
-    `)
+    .map((stage) => {
+      const selected = stage === state.selectedStage;
+      return `
+        <button class="stage-option ${selected ? "active" : ""}" data-stage="${escapeHtml(stage)}">
+          <span>${escapeHtml(stage)}</span>
+          ${selected ? '<span class="stage-check">OK</span>' : ""}
+        </button>
+      `;
+    })
     .join("");
 
   return `
@@ -172,7 +194,6 @@ function detailHeader() {
     </div>
   `;
 }
-
 function controlCards() {
   return `
     <div class="detail-controls">
@@ -265,11 +286,11 @@ function bindEvents() {
   const ownerCard = document.getElementById("ownerCard");
   if (ownerCard) ownerCard.addEventListener("click", () => post({ type: "openOwner" }));
 
-  const addAutomationCard = document.getElementById("addAutomationCard");
-  if (addAutomationCard) addAutomationCard.addEventListener("click", () => post({ type: "newAutomation", search: state.searchQuery }));
+  const updateButton = document.getElementById("updateButton");
+  if (updateButton) updateButton.addEventListener("click", () => post({ type: "update" }));
 
-  const newAutomation = document.getElementById("newAutomation");
-  if (newAutomation) newAutomation.addEventListener("click", () => post({ type: "newAutomation", search: state.searchQuery }));
+  const updateIndicator = document.getElementById("updateIndicator");
+  if (updateIndicator) updateIndicator.addEventListener("click", () => post({ type: "checkUpdate" }));
 
   const searchInput = document.getElementById("searchInput");
   if (searchInput) {

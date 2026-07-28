@@ -84,12 +84,11 @@ public sealed class MainForm : Form
             case "back":
                 ExecuteIfPossible(_viewModel.BackToHubCommand);
                 break;
-            case "newAutomation":
-                if (root.TryGetProperty("search", out var search))
-                {
-                    _viewModel.SearchQuery = search.GetString() ?? "";
-                }
-                ExecuteIfPossible(_viewModel.NewAutomationCommand);
+            case "checkUpdate":
+                ExecuteIfPossible(_viewModel.CheckUpdateCommand);
+                break;
+            case "update":
+                ExecuteIfPossible(_viewModel.UpdateCommand);
                 break;
             case "setSearch":
                 _viewModel.SearchQuery = root.GetProperty("value").GetString() ?? "";
@@ -149,6 +148,11 @@ public sealed class MainForm : Form
             isHubVisible = _viewModel.IsHubVisible,
             isDetailVisible = _viewModel.IsDetailVisible,
             isRunning = _viewModel.IsRunning,
+            currentVersion = _viewModel.CurrentVersion,
+            latestVersion = _viewModel.LatestVersion,
+            updateState = _viewModel.UpdateState,
+            updateMessage = _viewModel.UpdateMessage,
+            isUpdateAvailable = _viewModel.IsUpdateAvailable,
         };
 
         var json = JsonSerializer.Serialize(state);

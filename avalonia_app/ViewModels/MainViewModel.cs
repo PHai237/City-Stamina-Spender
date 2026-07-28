@@ -3,9 +3,12 @@ using System.Collections.Generic;
 using System.Diagnostics;
 using System.Globalization;
 using System.IO;
+using System.IO.Compression;
 using System.Linq;
+using System.Net.Http;
 using System.Runtime.InteropServices;
 using System.Text;
+using System.Text.Json;
 using System.Text.RegularExpressions;
 using System.Threading.Tasks;
 using CommunityToolkit.Mvvm.ComponentModel;
@@ -15,10 +18,13 @@ namespace CityStamina.Avalonia.ViewModels;
 
 public partial class MainViewModel : ViewModelBase
 {
+    public const string AppVersion = "1.2.0";
+    private const string LatestManifestUrl = "https://raw.githubusercontent.com/PHai237/City-Stamina-Spender/main/latest.json";
     private const string StageOneNine = "Stage 1-9";
     private const string StageOneOne = "Stage 1-1";
 
     private sealed record AutomationModule(string Id, string Name, string Category, bool IsReady);
+    private sealed record UpdateManifest(string? Version, string? Url, string? Notes);
 
     private readonly List<AutomationModule> _modules =
     [
@@ -36,6 +42,7 @@ public partial class MainViewModel : ViewModelBase
     private int _sessionSpent;
     private int _currentRunSpent;
     private int _runsToday;
+    private string _latestDownloadUrl = "";
 
     public MainViewModel()
     {
@@ -45,7 +52,10 @@ public partial class MainViewModel : ViewModelBase
         _ownerToolExePath = Path.Combine(_ownerToolDir, "OwnerSelectionTool.exe");
         _requirementsPath = Path.Combine(_rootDir, "owners_selection", "requirements.txt");
         RefreshHubMetrics();
+        _ = CheckUpdateAsync();
     }
+
+    public string CurrentVersion => AppVersion;
 
     [ObservableProperty]
     private string _title = "Owner's Selection";
@@ -101,6 +111,18 @@ public partial class MainViewModel : ViewModelBase
     [NotifyCanExecuteChangedFor(nameof(RunCommand))]
     [NotifyCanExecuteChangedFor(nameof(StopCommand))]
     private bool _isRunning;
+
+    [ObservableProperty]
+    [NotifyPropertyChangedFor(nameof(IsUpdateAvailable))]
+    private string _updateState = "checking";
+
+    [ObservableProperty]
+    private string _latestVersion = AppVersion;
+
+    [ObservableProperty]
+    private string _updateMessage = "Checking for updates...";
+
+    public bool IsUpdateAvailable => UpdateState == "available";
 
     [RelayCommand(CanExecute = nameof(CanChangeMode))]
     private void SelectOwner()
@@ -241,14 +263,106 @@ public partial class MainViewModel : ViewModelBase
     }
 
     [RelayCommand]
-    private void NewAutomation()
+    private async Task CheckUpdateAsync()
     {
-        var idea = string.IsNullOrWhiteSpace(SearchQuery)
-            ? "Untitled automation idea"
-            : SearchQuery.Trim();
+        try
+        {
+            UpdateState = "checking";
+            UpdateMessage = "Checking for updates...";
 
-        SetRunLog($"New automation idea: {idea}");
-        AppendLog("This will become the user idea intake flow.");
+            using var client = CreateHttpClient();
+            var manifestUrl = LatestManifestUrl + "?t=" + DateTimeOffset.UtcNow.ToUnixTimeSeconds().ToString(CultureInfo.InvariantCulture);
+            var json = await client.GetStringAsync(manifestUrl);
+            var manifest = JsonSerializer.Deserialize<UpdateManifest>(
+                json,
+                new JsonSerializerOptions { PropertyNameCaseInsensitive = true }
+            );
+
+            LatestVersion = string.IsNullOrWhiteSpace(manifest?.Version) ? AppVersion : manifest.Version.Trim();
+            _latestDownloadUrl = manifest?.Url?.Trim() ?? "";
+
+            if (CompareVersions(LatestVersion, AppVersion) > 0 && !string.IsNullOrWhiteSpace(_latestDownloadUrl))
+            {
+                UpdateState = "available";
+                UpdateMessage = $"Version {LatestVersion} is available.";
+                return;
+            }
+
+            UpdateState = "latest";
+            UpdateMessage = "You are on the latest version.";
+        }
+        catch
+        {
+            UpdateState = "error";
+            UpdateMessage = "Could not check updates.";
+        }
+    }
+
+    [RelayCommand]
+    private async Task UpdateAsync()
+    {
+        if (IsRunning)
+        {
+            UpdateState = "error";
+            UpdateMessage = "Stop the automation before updating.";
+            return;
+        }
+
+        if (!IsUpdateAvailable)
+        {
+            await CheckUpdateAsync();
+            if (!IsUpdateAvailable)
+            {
+                return;
+            }
+        }
+
+        try
+        {
+            UpdateState = "updating";
+            UpdateMessage = $"Downloading version {LatestVersion}...";
+
+            var tempDir = Path.Combine(Path.GetTempPath(), "CityStaminaUpdate_" + Guid.NewGuid().ToString("N"));
+            var extractDir = Path.Combine(tempDir, "extract");
+            var zipPath = Path.Combine(tempDir, "update.zip");
+            Directory.CreateDirectory(extractDir);
+
+            using var client = CreateHttpClient();
+            await using (var source = await client.GetStreamAsync(_latestDownloadUrl))
+            await using (var target = File.Create(zipPath))
+            {
+                await source.CopyToAsync(target);
+            }
+
+            ZipFile.ExtractToDirectory(zipPath, extractDir, overwriteFiles: true);
+            var sourceDir = FindExtractedUpdateDirectory(extractDir);
+            var scriptPath = WriteUpdaterScript(tempDir, sourceDir);
+
+            var currentExe = Path.Combine(_rootDir, "City Stamina Spender.exe");
+            var args =
+                "-NoProfile -ExecutionPolicy Bypass -File " + Quote(scriptPath) +
+                " -Source " + Quote(sourceDir) +
+                " -Target " + Quote(_rootDir) +
+                " -Exe " + Quote(currentExe) +
+                " -Pid " + Environment.ProcessId.ToString(CultureInfo.InvariantCulture) +
+                " -Temp " + Quote(tempDir);
+
+            Process.Start(new ProcessStartInfo
+            {
+                FileName = "powershell",
+                Arguments = args,
+                UseShellExecute = true,
+                WindowStyle = ProcessWindowStyle.Hidden,
+                WorkingDirectory = _rootDir,
+            });
+
+            Environment.Exit(0);
+        }
+        catch (Exception ex)
+        {
+            UpdateState = "error";
+            UpdateMessage = "Update failed: " + ex.Message;
+        }
     }
 
     private bool CanRun() => !IsRunning;
@@ -482,6 +596,79 @@ public partial class MainViewModel : ViewModelBase
     private static string FormatAmount(int value)
     {
         return value <= 0 ? "0" : value.ToString("N0", CultureInfo.InvariantCulture);
+    }
+
+    private static HttpClient CreateHttpClient()
+    {
+        var client = new HttpClient { Timeout = TimeSpan.FromSeconds(45) };
+        client.DefaultRequestHeaders.UserAgent.ParseAdd("City-Stamina-Spender/" + AppVersion);
+        return client;
+    }
+
+    private static int CompareVersions(string left, string right)
+    {
+        static Version Parse(string value)
+        {
+            var clean = value.Trim().TrimStart('v', 'V');
+            return Version.TryParse(clean, out var version) ? version : new Version(0, 0, 0);
+        }
+
+        return Parse(left).CompareTo(Parse(right));
+    }
+
+    private static string FindExtractedUpdateDirectory(string extractDir)
+    {
+        if (File.Exists(Path.Combine(extractDir, "City Stamina Spender.exe")))
+        {
+            return extractDir;
+        }
+
+        foreach (var directory in Directory.EnumerateDirectories(extractDir))
+        {
+            if (File.Exists(Path.Combine(directory, "City Stamina Spender.exe")))
+            {
+                return directory;
+            }
+        }
+
+        throw new InvalidOperationException("Downloaded update package is not valid.");
+    }
+
+    private static string WriteUpdaterScript(string tempDir, string sourceDir)
+    {
+        var scriptPath = Path.Combine(tempDir, "apply_update.ps1");
+        var script = """
+param(
+  [string]$Source,
+  [string]$Target,
+  [string]$Exe,
+  [int]$Pid,
+  [string]$Temp
+)
+
+$ErrorActionPreference = 'Stop'
+Start-Sleep -Milliseconds 800
+try { Wait-Process -Id $Pid -ErrorAction SilentlyContinue } catch {}
+
+Copy-Item -LiteralPath (Join-Path $Source 'City Stamina Spender.exe') -Destination $Target -Force
+Copy-Item -LiteralPath (Join-Path $Source 'web_ui') -Destination $Target -Recurse -Force
+Copy-Item -LiteralPath (Join-Path $Source 'owners_selection') -Destination $Target -Recurse -Force
+if (Test-Path -LiteralPath (Join-Path $Source 'latest.json')) {
+  Copy-Item -LiteralPath (Join-Path $Source 'latest.json') -Destination $Target -Force
+}
+
+Start-Process -FilePath $Exe -WorkingDirectory $Target
+Start-Sleep -Seconds 2
+try { Remove-Item -LiteralPath $Temp -Recurse -Force } catch {}
+""";
+        File.WriteAllText(scriptPath, script, Encoding.UTF8);
+        _ = sourceDir;
+        return scriptPath;
+    }
+
+    private static string Quote(string value)
+    {
+        return "\"" + value.Replace("\"", "\\\"") + "\"";
     }
 
     private static string FindRootDirectory()
