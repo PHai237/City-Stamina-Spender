@@ -1,0 +1,82 @@
+HƯỚNG DẪN CHẠY CITY STAMINA SPENDER
+
+Folder gốc hiện chỉ cần quan tâm:
+
+1. City Stamina Spender.exe
+2. owners_selection
+
+Bạn chỉ cần bấm:
+
+   City Stamina Spender.exe
+
+App sẽ mở một cửa sổ duy nhất. Bên trái là danh sách mode, bên phải là phần cài đặt và log của mode đang chọn.
+
+Folder `owners_selection` là dữ liệu nội bộ của mode Owner's Selection. Không xóa folder này, vì app cần nó để chạy.
+
+
+BƯỚC 1: Cài Python
+
+Hiện bản app này vẫn cần Python để chạy phần nhận diện hình ảnh bên trong.
+
+1. Tải Python từ trang chính thức:
+   https://www.python.org/downloads/
+
+2. Khi cài Python, nhớ tick dòng:
+   Add python.exe to PATH
+
+3. Cài xong, mở Command Prompt và gõ:
+   python --version
+
+Nếu thấy hiện Python 3.x là được.
+
+
+BƯỚC 2: Mở game đúng màn hình
+
+1. Mở NTE.
+2. Vào mode Owner's Selection.
+3. Để game ở màn danh sách stage, nơi có stage 1-9 và nút Open Shop.
+4. Có thể dùng các độ phân giải đã test: 1280x720, 1600x900, 1792x768, 1920x1080.
+
+
+BƯỚC 3: Chạy app
+
+1. Bấm `City Stamina Spender.exe`.
+2. Chọn mode `Owner's Selection`.
+3. Nhập số City Stamina muốn tiêu.
+4. Bấm `Chạy`.
+5. Nếu Windows hỏi quyền Administrator thì bấm Yes.
+
+App sẽ tự kiểm tra thư viện cần thiết. Nếu thiếu thư viện, app sẽ tự cài trước rồi mới chạy.
+
+Tool sẽ tự chạy đến khi tổng City Stamina đã tiêu lớn hơn hoặc bằng số bạn nhập.
+Tổng thực tế có thể lớn hơn một chút, vì mỗi lần Claim thường tốn 8 hoặc 12 City Stamina.
+
+
+LOG HIỂN THỊ
+
+Khung log trong app chỉ hiện các dòng ngắn gọn theo từng lượt, ví dụ:
+
+   Lượt 1: 0/200 City Stamina
+     Dòng 1: Đang tìm màn 1-9.
+     Dòng 2: Đã thấy màn 1-9, bấm Open Shop.
+     Dòng 3: Doanh thu đang cập nhật.
+     Dòng 4: Doanh thu 535/1,500.
+     Dòng 5: Doanh thu 1,030/1,500.
+     Dòng 6: Doanh thu 1,525/1,500.
+     Dòng 7: Đã đạt 1,500, bấm Claim.
+     Dòng 8: Tốn 12 City Stamina. Tổng 12/200 City Stamina.
+
+Log kỹ thuật đầy đủ sẽ tự tạo trong:
+
+   owners_selection\_tool\stage_1_9_debug\run.log
+
+
+NẾU TOOL BỊ DỪNG SỚM
+
+Hãy kiểm tra:
+
+1. Game đang mở đúng mode Owner's Selection chưa.
+2. Game đang ở màn danh sách stage, không phải trong gameplay hoặc màn Claim.
+3. Python đã cài đúng chưa.
+4. Windows có hiện yêu cầu Administrator không. Nếu có, bấm Yes.
+

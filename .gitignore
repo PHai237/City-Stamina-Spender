@@ -1,0 +1,32 @@
+# Build output
+bin/
+obj/
+build/
+dist/
+avalonia_publish/
+webview_publish/
+
+# Python caches and packager files
+__pycache__/
+.pytest_cache/
+*.pyc
+*.pyo
+*.spec
+
+# WebView2 runtime cache
+*.exe.WebView2/
+*.WebView2/
+
+# Local editor/cache files
+.vs/
+.idea/
+*.user
+*.suo
+*.tmp
+*.log
+
+# Release archives generated locally
+*.zip
+
+# Packaged binaries go to GitHub Releases, not git commits
+*.exe
