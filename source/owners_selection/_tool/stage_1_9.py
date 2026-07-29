@@ -548,7 +548,11 @@ def main() -> int:
             break
         if compact_output:
             log("Owner's Selection ready and energy is available")
-        result, spent, opened_shop, next_line = run_cycle(compact_output, next_line)
+        result, spent, opened_shop, next_line = run_cycle(
+            compact_output,
+            next_line,
+            args.skip_support_employee_check,
+        )
         if result != 0:
             print(f"  Line {next_line}: Stopped.")
             log(f"Loop cycle {cycle} stopped with return code {result}")
