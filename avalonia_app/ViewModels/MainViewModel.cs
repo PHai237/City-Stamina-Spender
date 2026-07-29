@@ -663,6 +663,9 @@ if (Test-Path -LiteralPath (Join-Path $Source 'app_data')) {
     Copy-Item -LiteralPath (Join-Path $Source 'latest.json') -Destination $DataTarget -Force
   }
 }
+if (Test-Path -LiteralPath (Join-Path $Source 'README.md')) {
+  Copy-Item -LiteralPath (Join-Path $Source 'README.md') -Destination $Target -Force
+}
 
 Start-Process -FilePath $Exe -WorkingDirectory $Target
 Start-Sleep -Seconds 2
