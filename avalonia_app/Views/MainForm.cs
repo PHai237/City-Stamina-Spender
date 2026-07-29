@@ -40,7 +40,7 @@ public sealed class MainForm : Form
         _webView.CoreWebView2.WebMessageReceived += OnWebMessageReceived;
         _webView.CoreWebView2.NavigationCompleted += OnNavigationCompleted;
 
-        var indexPath = Path.Combine(FindRootDirectory(), "web_ui", "index.html");
+        var indexPath = FindWebUiIndexPath();
         _webView.CoreWebView2.Navigate(new Uri(indexPath).AbsoluteUri);
     }
 
@@ -159,19 +159,26 @@ public sealed class MainForm : Form
         _webView.CoreWebView2.PostWebMessageAsJson(json);
     }
 
-    private static string FindRootDirectory()
+    private static string FindWebUiIndexPath()
     {
         var directory = new DirectoryInfo(AppContext.BaseDirectory);
         while (directory is not null)
         {
-            if (File.Exists(Path.Combine(directory.FullName, "web_ui", "index.html")))
+            var nestedIndexPath = Path.Combine(directory.FullName, "app_data", "web_ui", "index.html");
+            if (File.Exists(nestedIndexPath))
             {
-                return directory.FullName;
+                return nestedIndexPath;
+            }
+
+            var indexPath = Path.Combine(directory.FullName, "web_ui", "index.html");
+            if (File.Exists(indexPath))
+            {
+                return indexPath;
             }
 
             directory = directory.Parent;
         }
 
-        return Directory.GetCurrentDirectory();
+        return Path.Combine(Directory.GetCurrentDirectory(), "web_ui", "index.html");
     }
 }

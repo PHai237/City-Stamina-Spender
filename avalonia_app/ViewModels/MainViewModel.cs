@@ -32,6 +32,7 @@ public partial class MainViewModel : ViewModelBase
     ];
 
     private readonly string _rootDir;
+    private readonly string _dataDir;
     private readonly string _ownerToolDir;
     private readonly string _ownerToolPath;
     private readonly string _ownerToolExePath;
@@ -46,11 +47,11 @@ public partial class MainViewModel : ViewModelBase
 
     public MainViewModel()
     {
-        _rootDir = FindRootDirectory();
-        _ownerToolDir = Path.Combine(_rootDir, "owners_selection", "_tool");
+        (_rootDir, _dataDir) = FindApplicationDirectories();
+        _ownerToolDir = Path.Combine(_dataDir, "owners_selection", "_tool");
         _ownerToolPath = Path.Combine(_ownerToolDir, "stage_1_9.py");
         _ownerToolExePath = Path.Combine(_ownerToolDir, "OwnerSelectionTool.exe");
-        _requirementsPath = Path.Combine(_rootDir, "owners_selection", "requirements.txt");
+        _requirementsPath = Path.Combine(_dataDir, "owners_selection", "requirements.txt");
         RefreshHubMetrics();
         _ = CheckUpdateAsync();
     }
@@ -618,10 +619,10 @@ public partial class MainViewModel : ViewModelBase
 
     private static string FindExtractedUpdateDirectory(string extractDir)
     {
-        if (File.Exists(Path.Combine(extractDir, "City Stamina Spender.exe")))
-        {
-            return extractDir;
-        }
+            if (File.Exists(Path.Combine(extractDir, "City Stamina Spender.exe")))
+            {
+                return extractDir;
+            }
 
         foreach (var directory in Directory.EnumerateDirectories(extractDir))
         {
@@ -651,10 +652,16 @@ Start-Sleep -Milliseconds 800
 try { Wait-Process -Id $Pid -ErrorAction SilentlyContinue } catch {}
 
 Copy-Item -LiteralPath (Join-Path $Source 'City Stamina Spender.exe') -Destination $Target -Force
-Copy-Item -LiteralPath (Join-Path $Source 'web_ui') -Destination $Target -Recurse -Force
-Copy-Item -LiteralPath (Join-Path $Source 'owners_selection') -Destination $Target -Recurse -Force
-if (Test-Path -LiteralPath (Join-Path $Source 'latest.json')) {
-  Copy-Item -LiteralPath (Join-Path $Source 'latest.json') -Destination $Target -Force
+if (Test-Path -LiteralPath (Join-Path $Source 'app_data')) {
+  Copy-Item -LiteralPath (Join-Path $Source 'app_data') -Destination $Target -Recurse -Force
+} else {
+  $DataTarget = Join-Path $Target 'app_data'
+  if (-not (Test-Path -LiteralPath $DataTarget)) { New-Item -ItemType Directory -Path $DataTarget | Out-Null }
+  Copy-Item -LiteralPath (Join-Path $Source 'web_ui') -Destination $DataTarget -Recurse -Force
+  Copy-Item -LiteralPath (Join-Path $Source 'owners_selection') -Destination $DataTarget -Recurse -Force
+  if (Test-Path -LiteralPath (Join-Path $Source 'latest.json')) {
+    Copy-Item -LiteralPath (Join-Path $Source 'latest.json') -Destination $DataTarget -Force
+  }
 }
 
 Start-Process -FilePath $Exe -WorkingDirectory $Target
@@ -671,20 +678,28 @@ try { Remove-Item -LiteralPath $Temp -Recurse -Force } catch {}
         return "\"" + value.Replace("\"", "\\\"") + "\"";
     }
 
-    private static string FindRootDirectory()
+    private static (string RootDir, string DataDir) FindApplicationDirectories()
     {
         var directory = new DirectoryInfo(AppContext.BaseDirectory);
         while (directory is not null)
         {
+            var nestedDataDir = Path.Combine(directory.FullName, "app_data");
+            if (File.Exists(Path.Combine(nestedDataDir, "owners_selection", "_tool", "stage_1_9.py")))
+            {
+                return (directory.FullName, nestedDataDir);
+            }
+
             if (File.Exists(Path.Combine(directory.FullName, "owners_selection", "_tool", "stage_1_9.py")))
             {
-                return directory.FullName;
+                return (directory.FullName, directory.FullName);
             }
 
             directory = directory.Parent;
         }
 
-        return Directory.GetCurrentDirectory();
+        var current = Directory.GetCurrentDirectory();
+        var currentDataDir = Path.Combine(current, "app_data");
+        return Directory.Exists(currentDataDir) ? (current, currentDataDir) : (current, current);
     }
 
     private readonly record struct GameWindowInfo(string Title, int Width, int Height, nint Hwnd);

@@ -68,6 +68,6 @@ del /Q "webview_publish\*.pdb" >nul 2>&1
 del /Q "build\*.spec" >nul 2>&1
 
 echo Done: City Stamina Spender.exe
-echo Share the whole folder, including web_ui and owners_selection.
+echo Release layout should include City Stamina Spender.exe and app_data.
 echo Your friend only needs to open City Stamina Spender.exe.
 pause
