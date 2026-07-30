@@ -18,13 +18,15 @@ namespace CityStamina.Avalonia.ViewModels;
 
 public partial class MainViewModel : ViewModelBase
 {
-    public const string AppVersion = "1.2.1";
+    public const string AppVersion = "1.2.2";
     private const string LatestManifestUrl = "https://raw.githubusercontent.com/PHai237/City-Stamina-Spender/main/latest.json";
     private const string StageOneNine = "Stage 1-9";
     private const string StageOneOne = "Stage 1-1";
+    private const int MaxUiLogLines = 14;
 
     private sealed record AutomationModule(string Id, string Name, string Category, bool IsReady);
     private sealed record UpdateManifest(string? Version, string? Url, string? Notes);
+    private sealed record ToolCommand(string FileName, string Arguments, bool UsesPythonSource);
 
     private readonly List<AutomationModule> _modules =
     [
@@ -35,23 +37,33 @@ public partial class MainViewModel : ViewModelBase
     private readonly string _dataDir;
     private readonly string _ownerToolDir;
     private readonly string _ownerToolPath;
+    private readonly string _recipePlayerPath;
+    private readonly string _itemRunnerPath;
     private readonly string _ownerToolExePath;
-    private readonly string _requirementsPath;
+    private readonly string _wrapperLogPath;
+    private readonly bool _preferPythonSource;
+    private readonly Queue<string> _uiLogLines = new();
+    private readonly object _debugLogLock = new();
     private Process? _ownerProcess;
     private readonly Stopwatch _runStopwatch = new();
     private System.Timers.Timer? _elapsedTimer;
+    private bool _stopRequested;
     private int _sessionSpent;
     private int _currentRunSpent;
     private int _runsToday;
     private string _latestDownloadUrl = "";
+    private string _lastUiLogLine = "";
 
     public MainViewModel()
     {
         (_rootDir, _dataDir) = FindApplicationDirectories();
         _ownerToolDir = Path.Combine(_dataDir, "owners_selection", "_tool");
         _ownerToolPath = Path.Combine(_ownerToolDir, "stage_1_9.py");
+        _recipePlayerPath = Path.Combine(_ownerToolDir, "stage_1_1_recipe_player.py");
+        _itemRunnerPath = Path.Combine(_ownerToolDir, "stage_1_1_item_runner.py");
         _ownerToolExePath = Path.Combine(_ownerToolDir, "OwnerSelectionTool.exe");
-        _requirementsPath = Path.Combine(_dataDir, "owners_selection", "requirements.txt");
+        _wrapperLogPath = Path.Combine(_ownerToolDir, "wrapper_debug", "run.log");
+        _preferPythonSource = IsDevelopmentLayout(_dataDir);
         RefreshHubMetrics();
         _ = CheckUpdateAsync();
     }
@@ -156,14 +168,7 @@ public partial class MainViewModel : ViewModelBase
             return;
         }
 
-        if (SelectedStage == StageOneOne)
-        {
-            SetRunLog($"Run 1: 0/{FormatAmount(amount)} City Stamina");
-            AppendLog("  Line 1: Stage 1-1 coffee automation is not wired yet.");
-            AppendLog("  Line 2: Internal rule ready: 2-3 cups per order.");
-            return;
-        }
-
+        _stopRequested = false;
         IsRunning = true;
         _runsToday++;
         RefreshHubMetrics();
@@ -174,7 +179,7 @@ public partial class MainViewModel : ViewModelBase
         try
         {
             SetRunLog("Checking dependencies...");
-            if (!File.Exists(_ownerToolExePath) && !File.Exists(_ownerToolPath))
+            if (!OwnerToolExists())
             {
                 AppendLog("Owner's Selection tool was not found.");
                 return;
@@ -182,10 +187,17 @@ public partial class MainViewModel : ViewModelBase
 
             if (!await DependenciesReadyAsync(logWhenReady: false))
             {
-                AppendLog("Dependency check failed.");
+                if (!_stopRequested)
+                {
+                    AppendLog("Dependency check failed.");
+                }
                 return;
             }
 
+            if (_stopRequested)
+            {
+                return;
+            }
             AppendLog("Dependencies are ready.");
 
             AppendLog("Checking game...");
@@ -199,42 +211,46 @@ public partial class MainViewModel : ViewModelBase
             AppendLog($"Game found: {game.Value.Width}x{game.Value.Height} ({game.Value.Title})");
 
             AppendLog("Checking Support Employee...");
-            if (!await PrepareSupportEmployeeAsync())
+            if (!await PrepareSupportEmployeeAsync(SelectedStageArg))
             {
-                AppendLog("Support Employee check failed.");
+                if (!_stopRequested)
+                {
+                    AppendLog("Support Employee check failed.");
+                }
                 return;
             }
 
-            _ownerProcess = StartOwnerProcess(amount, skipSupportEmployeeCheck: true);
+            if (_stopRequested)
+            {
+                return;
+            }
 
-            if (_ownerProcess.StandardOutput is null)
+            using var process = StartOwnerProcess(amount, SelectedStageArg, skipSupportEmployeeCheck: true);
+            var exitCode = await RunTrackedProcessAsync(process, HandleAutomationLine, showErrorsInUi: true);
+            if (_stopRequested)
             {
                 AppendLog("Stopped.");
-                return;
             }
-
-            while (await _ownerProcess.StandardOutput.ReadLineAsync() is { } line)
-            {
-                HandleAutomationLine(line);
-            }
-
-            await _ownerProcess.WaitForExitAsync();
-            if (_ownerProcess.ExitCode == 0)
+            else if (exitCode == 0)
             {
                 AppendLog("Completed.");
             }
             else
             {
-                AppendLog("Stopped.");
+                AppendLog($"Stopped with code {exitCode}.");
             }
         }
         catch (Exception ex)
         {
-            AppendLog($"Stopped. {ex.Message}");
+            AppendLog(_stopRequested ? "Stopped." : $"Stopped. {ex.Message}");
+            WriteWrapperDebug("wrapper", ex.ToString());
         }
         finally
         {
-            _ownerProcess?.Dispose();
+            if (_stopRequested)
+            {
+                AppendLog("Stopped.");
+            }
             _ownerProcess = null;
             _sessionSpent += _currentRunSpent;
             _currentRunSpent = 0;
@@ -248,6 +264,7 @@ public partial class MainViewModel : ViewModelBase
     [RelayCommand(CanExecute = nameof(CanStop))]
     private void Stop()
     {
+        _stopRequested = true;
         try
         {
             if (_ownerProcess is { HasExited: false })
@@ -260,7 +277,79 @@ public partial class MainViewModel : ViewModelBase
             // The process may exit between the HasExited check and Kill.
         }
 
-        AppendLog("Stopped.");
+        AppendLog("Stopping...");
+    }
+
+    [RelayCommand(CanExecute = nameof(CanRun))]
+    private async Task TestItemTwoAsync()
+    {
+        _stopRequested = false;
+        IsRunning = true;
+        RefreshHubMetrics();
+        SetRunLog("Testing item 2 recipe...");
+
+        try
+        {
+            if (!File.Exists(_recipePlayerPath))
+            {
+                AppendLog("Recipe player was not found.");
+                return;
+            }
+
+            var exitCode = await RunProcessToLogAsync(
+                "python",
+                $"-u \"{_recipePlayerPath}\" white_coffee",
+                _ownerToolDir,
+                logOutput: true
+            );
+
+            AppendLog(exitCode == 0 ? "Item 2 test completed." : "Item 2 test stopped.");
+        }
+        catch (Exception ex)
+        {
+            AppendLog($"Item 2 test stopped. {ex.Message}");
+        }
+        finally
+        {
+            IsRunning = false;
+            RefreshHubMetrics();
+        }
+    }
+
+    [RelayCommand(CanExecute = nameof(CanRun))]
+    private async Task AutoItemOneAsync()
+    {
+        _stopRequested = false;
+        IsRunning = true;
+        RefreshHubMetrics();
+        SetRunLog("Auto item 1 running...");
+
+        try
+        {
+            if (!File.Exists(_itemRunnerPath))
+            {
+                AppendLog("Item runner was not found.");
+                return;
+            }
+
+            var exitCode = await RunProcessToLogAsync(
+                "python",
+                $"-u \"{_itemRunnerPath}\" 1 --watch 60 --interval 0.25 --threshold 0.82",
+                _ownerToolDir,
+                logOutput: true
+            );
+
+            AppendLog(exitCode == 0 ? "Auto item 1 completed." : "Auto item 1 stopped.");
+        }
+        catch (Exception ex)
+        {
+            AppendLog($"Auto item 1 stopped. {ex.Message}");
+        }
+        finally
+        {
+            IsRunning = false;
+            RefreshHubMetrics();
+        }
     }
 
     [RelayCommand]
@@ -337,7 +426,7 @@ public partial class MainViewModel : ViewModelBase
 
             ZipFile.ExtractToDirectory(zipPath, extractDir, overwriteFiles: true);
             var sourceDir = FindExtractedUpdateDirectory(extractDir);
-            var scriptPath = WriteUpdaterScript(tempDir, sourceDir);
+            var scriptPath = WriteUpdaterScript(tempDir);
 
             var currentExe = Path.Combine(_rootDir, "City Stamina Spender.exe");
             var args =
@@ -397,51 +486,71 @@ public partial class MainViewModel : ViewModelBase
             UseShellExecute = false,
             RedirectStandardOutput = true,
             RedirectStandardError = true,
+            StandardOutputEncoding = Encoding.UTF8,
+            StandardErrorEncoding = Encoding.UTF8,
             CreateNoWindow = true,
         };
 
         return Process.Start(startInfo) ?? throw new InvalidOperationException("Could not start process.");
     }
 
-    private Process StartOwnerProcess(int amount, bool skipSupportEmployeeCheck)
+    private string SelectedStageArg => SelectedStage == StageOneOne ? "1-1" : "1-9";
+
+    private bool OwnerToolExists() => File.Exists(_ownerToolPath) || File.Exists(_ownerToolExePath);
+
+    private ToolCommand ResolveOwnerCommand(string arguments)
     {
-        var skipSupportArg = skipSupportEmployeeCheck ? " --skip-support-employee-check" : "";
+        var sourceCommand = new ToolCommand(
+            "python",
+            string.IsNullOrWhiteSpace(arguments)
+                ? $"-u \"{_ownerToolPath}\""
+                : $"-u \"{_ownerToolPath}\" {arguments}",
+            UsesPythonSource: true
+        );
+        var packagedCommand = new ToolCommand(
+            _ownerToolExePath,
+            arguments,
+            UsesPythonSource: false
+        );
+
+        if (_preferPythonSource && File.Exists(_ownerToolPath))
+        {
+            return sourceCommand;
+        }
         if (File.Exists(_ownerToolExePath))
         {
-            return StartProcess(
-                _ownerToolExePath,
-                amount.ToString(CultureInfo.InvariantCulture) + skipSupportArg,
-                _ownerToolDir
-            );
+            return packagedCommand;
+        }
+        if (File.Exists(_ownerToolPath))
+        {
+            return sourceCommand;
         }
 
-        return StartProcess(
-            "python",
-            $"-u \"{_ownerToolPath}\" {amount.ToString(CultureInfo.InvariantCulture)}{skipSupportArg}",
-            _ownerToolDir
-        );
+        throw new FileNotFoundException("Owner's Selection tool was not found.");
     }
 
-    private async Task<bool> PrepareSupportEmployeeAsync()
+    private Process StartOwnerProcess(int amount, string stage, bool skipSupportEmployeeCheck)
     {
-        if (File.Exists(_ownerToolExePath))
+        var arguments = amount.ToString(CultureInfo.InvariantCulture) + $" --stage {stage}";
+        if (skipSupportEmployeeCheck)
         {
-            return await RunProcessToLogAsync(
-                _ownerToolExePath,
-                "--prepare-support-only",
-                _ownerToolDir,
-                logOutput: true
-            ) == 0;
+            arguments += " --skip-support-employee-check";
         }
 
-        if (!File.Exists(_ownerToolPath))
-        {
-            return false;
-        }
+        var command = ResolveOwnerCommand(arguments);
+        WriteWrapperDebug(
+            "wrapper",
+            $"Starting owner tool mode={(command.UsesPythonSource ? "source" : "packaged")} stage={stage} amount={amount}"
+        );
+        return StartProcess(command.FileName, command.Arguments, _ownerToolDir);
+    }
 
+    private async Task<bool> PrepareSupportEmployeeAsync(string stage)
+    {
+        var command = ResolveOwnerCommand($"--prepare-support-only --stage {stage}");
         return await RunProcessToLogAsync(
-            "python",
-            $"-u \"{_ownerToolPath}\" --prepare-support-only",
+            command.FileName,
+            command.Arguments,
             _ownerToolDir,
             logOutput: true
         ) == 0;
@@ -454,45 +563,76 @@ public partial class MainViewModel : ViewModelBase
         bool logOutput)
     {
         using var process = StartProcess(fileName, arguments, workingDirectory);
-        while (await process.StandardOutput.ReadLineAsync() is { } line)
-        {
-            if (logOutput)
+        return await RunTrackedProcessAsync(
+            process,
+            line =>
             {
-                AppendLog(line);
-            }
-        }
-
-        var errors = await process.StandardError.ReadToEndAsync();
-        await process.WaitForExitAsync();
-        if (process.ExitCode != 0 && !string.IsNullOrWhiteSpace(errors))
-        {
-            AppendLog(errors.Trim());
-        }
-
-        return process.ExitCode;
+                if (logOutput)
+                {
+                    AppendLog(line);
+                }
+            },
+            showErrorsInUi: true
+        );
     }
 
-    private async Task<(int ExitCode, string Text)> CaptureProcessOutputAsync(
-        string fileName,
-        string arguments,
-        string workingDirectory)
+    private async Task<int> RunTrackedProcessAsync(
+        Process process,
+        Action<string> stdoutHandler,
+        bool showErrorsInUi)
     {
-        using var process = StartProcess(fileName, arguments, workingDirectory);
-        var stdout = await process.StandardOutput.ReadToEndAsync();
-        var stderr = await process.StandardError.ReadToEndAsync();
-        await process.WaitForExitAsync();
-        return (process.ExitCode, string.IsNullOrWhiteSpace(stdout) ? stderr : stdout);
+        var errors = new List<string>();
+        _ownerProcess = process;
+        try
+        {
+            var stdoutTask = PumpProcessLinesAsync(
+                process.StandardOutput,
+                "stdout",
+                stdoutHandler
+            );
+            var stderrTask = PumpProcessLinesAsync(
+                process.StandardError,
+                "stderr",
+                line => errors.Add(line)
+            );
+
+            await Task.WhenAll(stdoutTask, stderrTask, process.WaitForExitAsync());
+            if (showErrorsInUi && process.ExitCode != 0 && !_stopRequested && errors.Count > 0)
+            {
+                AppendLog(string.Join(Environment.NewLine, errors.TakeLast(3)));
+            }
+            return process.ExitCode;
+        }
+        finally
+        {
+            if (ReferenceEquals(_ownerProcess, process))
+            {
+                _ownerProcess = null;
+            }
+        }
+    }
+
+    private async Task PumpProcessLinesAsync(
+        StreamReader reader,
+        string source,
+        Action<string> handler)
+    {
+        while (await reader.ReadLineAsync() is { } line)
+        {
+            WriteWrapperDebug(source, line);
+            handler(line);
+        }
     }
 
     private async Task<bool> DependenciesReadyAsync(bool logWhenReady)
     {
-        if (File.Exists(_ownerToolExePath))
+        var ownerCommand = ResolveOwnerCommand("");
+        if (!ownerCommand.UsesPythonSource)
         {
             if (logWhenReady)
             {
                 AppendLog("Packaged tool is ready.");
             }
-
             return true;
         }
 
@@ -513,16 +653,49 @@ public partial class MainViewModel : ViewModelBase
 
     private void HandleAutomationLine(string line)
     {
+        UpdateSpentFromLog(line);
+
         if (Regex.IsMatch(line, @"^Run\s+\d+:", RegexOptions.IgnoreCase))
         {
             SetRunLog(line);
+            return;
         }
-        else
+
+        var lineMatch = Regex.Match(
+            line,
+            @"^\s*Line\s+\d+:\s*(.+)$",
+            RegexOptions.IgnoreCase
+        );
+        if (lineMatch.Success)
+        {
+            var message = lineMatch.Groups[1].Value.Trim();
+            if (!IsNoisyUiLog(message))
+            {
+                AppendLog(message);
+            }
+            return;
+        }
+
+        if (line.StartsWith("ORDER_", StringComparison.OrdinalIgnoreCase))
+        {
+            return;
+        }
+
+        if (!IsNoisyUiLog(line))
         {
             AppendLog(line);
         }
+    }
 
-        UpdateSpentFromLog(line);
+    private static bool IsNoisyUiLog(string message)
+    {
+        var trimmed = message.Trim();
+        return string.IsNullOrWhiteSpace(trimmed)
+            || trimmed.StartsWith("Scanning orders", StringComparison.OrdinalIgnoreCase)
+            || trimmed.StartsWith("Detected ", StringComparison.OrdinalIgnoreCase)
+            || trimmed.StartsWith("Prepared item", StringComparison.OrdinalIgnoreCase)
+            || trimmed.StartsWith("Used item", StringComparison.OrdinalIgnoreCase)
+            || trimmed.StartsWith("Attempt ", StringComparison.OrdinalIgnoreCase);
     }
 
     private void UpdateSpentFromLog(string line)
@@ -579,12 +752,52 @@ public partial class MainViewModel : ViewModelBase
 
     private void SetRunLog(string message)
     {
-        LogText = message + Environment.NewLine;
+        _uiLogLines.Clear();
+        _lastUiLogLine = "";
+        AppendLog(message);
     }
 
     private void AppendLog(string message)
     {
-        LogText += message + Environment.NewLine;
+        foreach (var rawLine in message.Replace("\r", "").Split('\n'))
+        {
+            var line = rawLine.Trim();
+            if (string.IsNullOrWhiteSpace(line) || line == _lastUiLogLine)
+            {
+                continue;
+            }
+
+            _lastUiLogLine = line;
+            _uiLogLines.Enqueue(line);
+            while (_uiLogLines.Count > MaxUiLogLines)
+            {
+                _uiLogLines.Dequeue();
+            }
+        }
+
+        LogText = _uiLogLines.Count == 0
+            ? ""
+            : string.Join(Environment.NewLine, _uiLogLines) + Environment.NewLine;
+    }
+
+    private void WriteWrapperDebug(string source, string message)
+    {
+        try
+        {
+            lock (_debugLogLock)
+            {
+                Directory.CreateDirectory(Path.GetDirectoryName(_wrapperLogPath)!);
+                File.AppendAllText(
+                    _wrapperLogPath,
+                    $"{DateTime.Now:yyyy-MM-dd HH:mm:ss.fff} [{source}] {message}{Environment.NewLine}",
+                    Encoding.UTF8
+                );
+            }
+        }
+        catch
+        {
+            // Debug logging must never stop the automation.
+        }
     }
 
     private static int ParseAmount(string value)
@@ -619,10 +832,10 @@ public partial class MainViewModel : ViewModelBase
 
     private static string FindExtractedUpdateDirectory(string extractDir)
     {
-            if (File.Exists(Path.Combine(extractDir, "City Stamina Spender.exe")))
-            {
-                return extractDir;
-            }
+        if (File.Exists(Path.Combine(extractDir, "City Stamina Spender.exe")))
+        {
+            return extractDir;
+        }
 
         foreach (var directory in Directory.EnumerateDirectories(extractDir))
         {
@@ -635,7 +848,7 @@ public partial class MainViewModel : ViewModelBase
         throw new InvalidOperationException("Downloaded update package is not valid.");
     }
 
-    private static string WriteUpdaterScript(string tempDir, string sourceDir)
+    private static string WriteUpdaterScript(string tempDir)
     {
         var scriptPath = Path.Combine(tempDir, "apply_update.ps1");
         var script = """
@@ -672,7 +885,6 @@ Start-Sleep -Seconds 2
 try { Remove-Item -LiteralPath $Temp -Recurse -Force } catch {}
 """;
         File.WriteAllText(scriptPath, script, Encoding.UTF8);
-        _ = sourceDir;
         return scriptPath;
     }
 
@@ -681,18 +893,40 @@ try { Remove-Item -LiteralPath $Temp -Recurse -Force } catch {}
         return "\"" + value.Replace("\"", "\\\"") + "\"";
     }
 
+    private static bool IsDevelopmentLayout(string dataDir)
+    {
+        var normalized = Path.TrimEndingDirectorySeparator(dataDir);
+        return Path.GetFileName(normalized).Equals("source", StringComparison.OrdinalIgnoreCase)
+            || Directory.Exists(Path.Combine(normalized, "avalonia_app"));
+    }
+
+    private static bool HasOwnerTool(string dataDir)
+    {
+        var toolDir = Path.Combine(dataDir, "owners_selection", "_tool");
+        return File.Exists(Path.Combine(toolDir, "stage_1_9.py"))
+            || File.Exists(Path.Combine(toolDir, "OwnerSelectionTool.exe"));
+    }
+
     private static (string RootDir, string DataDir) FindApplicationDirectories()
     {
         var directory = new DirectoryInfo(AppContext.BaseDirectory);
         while (directory is not null)
         {
+            // Prefer an explicit source layout while debugging, even if a stale
+            // app_data folder also exists beside the repository.
+            var sourceDataDir = Path.Combine(directory.FullName, "source");
+            if (HasOwnerTool(sourceDataDir))
+            {
+                return (directory.FullName, sourceDataDir);
+            }
+
             var nestedDataDir = Path.Combine(directory.FullName, "app_data");
-            if (File.Exists(Path.Combine(nestedDataDir, "owners_selection", "_tool", "stage_1_9.py")))
+            if (HasOwnerTool(nestedDataDir))
             {
                 return (directory.FullName, nestedDataDir);
             }
 
-            if (File.Exists(Path.Combine(directory.FullName, "owners_selection", "_tool", "stage_1_9.py")))
+            if (HasOwnerTool(directory.FullName))
             {
                 return (directory.FullName, directory.FullName);
             }

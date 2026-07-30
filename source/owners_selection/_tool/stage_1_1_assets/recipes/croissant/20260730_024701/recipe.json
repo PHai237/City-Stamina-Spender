@@ -1,0 +1,78 @@
+{
+  "version": 1,
+  "stage": "1-1",
+  "item": "croissant",
+  "created_at": "2026-07-30 02:47:20",
+  "client": {
+    "width": 1600,
+    "height": 900
+  },
+  "steps": [
+    {
+      "index": 1,
+      "elapsed_sec": 5.784,
+      "screen": {
+        "x": 777,
+        "y": 914
+      },
+      "local": {
+        "x": 617,
+        "y": 824
+      },
+      "base_1280x720": {
+        "x": 494,
+        "y": 659
+      },
+      "ratio": {
+        "x": 0.385625,
+        "y": 0.915556
+      },
+      "before_image": "step_01_before.png",
+      "after_image": "step_01_after.png"
+    },
+    {
+      "index": 2,
+      "elapsed_sec": 8.692,
+      "screen": {
+        "x": 692,
+        "y": 750
+      },
+      "local": {
+        "x": 532,
+        "y": 660
+      },
+      "base_1280x720": {
+        "x": 426,
+        "y": 528
+      },
+      "ratio": {
+        "x": 0.3325,
+        "y": 0.733333
+      },
+      "before_image": "step_02_before.png",
+      "after_image": "step_02_after.png"
+    },
+    {
+      "index": 3,
+      "elapsed_sec": 11.532,
+      "screen": {
+        "x": 482,
+        "y": 626
+      },
+      "local": {
+        "x": 322,
+        "y": 536
+      },
+      "base_1280x720": {
+        "x": 258,
+        "y": 429
+      },
+      "ratio": {
+        "x": 0.20125,
+        "y": 0.595556
+      },
+      "before_image": "step_03_before.png",
+      "after_image": "step_03_after.png"
+    }
+  ]
+}

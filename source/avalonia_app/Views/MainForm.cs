@@ -112,6 +112,12 @@ public sealed class MainForm : Form
             case "stop":
                 ExecuteIfPossible(_viewModel.StopCommand);
                 break;
+            case "testItem2":
+                ExecuteIfPossible(_viewModel.TestItemTwoCommand);
+                break;
+            case "autoItem1":
+                ExecuteIfPossible(_viewModel.AutoItemOneCommand);
+                break;
         }
     }
 
@@ -174,6 +180,12 @@ public sealed class MainForm : Form
             if (File.Exists(indexPath))
             {
                 return indexPath;
+            }
+
+            var sourceIndexPath = Path.Combine(directory.FullName, "source", "web_ui", "index.html");
+            if (File.Exists(sourceIndexPath))
+            {
+                return sourceIndexPath;
             }
 
             directory = directory.Parent;

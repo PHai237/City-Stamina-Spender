@@ -51,20 +51,32 @@ SUPPORT_EMPLOYEE_THRESHOLD = 0.68
 SUPPORT_PAGE_REGION = {"left": 238, "top": 106, "width": 804, "height": 510}
 SUPPORT_PAGE_TITLE_REGION = {"left": 450, "top": 108, "width": 310, "height": 52}
 SUPPORT_TOP_SLOT_REGIONS = {
-    "Sakiri": {"left": 460, "top": 166, "width": 115, "height": 112},
-    "Mint": {"left": 590, "top": 166, "width": 115, "height": 112},
-    "Adler": {"left": 720, "top": 166, "width": 115, "height": 112},
+    "slot_1": {"left": 460, "top": 166, "width": 115, "height": 112},
+    "slot_2": {"left": 590, "top": 166, "width": 115, "height": 112},
+    "slot_3": {"left": 720, "top": 166, "width": 115, "height": 112},
 }
 SUPPORT_PAGE_THRESHOLD = 0.58
 SUPPORT_TOP_SLOT_THRESHOLD = 0.60
+STAGE_CONFIGS = {
+    "1-9": {
+        "label": "1-9",
+        "employees": ("Sakiri", "Mint", "Adler"),
+        "asset_dir": "stage_1_9_assets",
+    },
+    "1-1": {
+        "label": "1-1",
+        "employees": ("Daffodill", "Lacrimosa", "Adler"),
+        "asset_dir": "stage_1_1_assets",
+    },
+}
 WORKSPACE = (
     Path(sys.executable).resolve().parent
     if getattr(sys, "frozen", False)
     else Path(__file__).resolve().parent
 )
 LOG_PATH = WORKSPACE / "stage_1_9_debug/run.log"
-SUPPORT_EMPLOYEE_ASSET_DIR = WORKSPACE / "stage_1_9_assets" / "support_employee"
-SUPPORT_EMPLOYEE_PAGE_ASSET_DIR = WORKSPACE / "stage_1_9_assets" / "support_employee_page"
+DEFAULT_SUPPORT_EMPLOYEE_ASSET_DIR = WORKSPACE / "stage_1_9_assets" / "support_employee"
+DEFAULT_SUPPORT_EMPLOYEE_PAGE_ASSET_DIR = WORKSPACE / "stage_1_9_assets" / "support_employee_page"
 
 
 class MOUSEINPUT(ctypes.Structure):
@@ -358,6 +370,25 @@ def scroll_up(hwnd: int, client: dict[str, int], wheel_steps: int) -> None:
         human_sleep(0.06, 0.6, 0.02)
 
 
+def scroll_down(hwnd: int, client: dict[str, int], wheel_steps: int) -> None:
+    focus_window(hwnd, 0.2)
+    x, y = scale_point(client, LIST_MOUSE_POINT)
+    move_mouse(
+        client["left"] + x,
+        client["top"] + y,
+    )
+    for _ in range(max(1, wheel_steps + random.randint(-2, 2))):
+        user32.mouse_event(MOUSEEVENTF_WHEEL, 0, 0, -120, 0)
+        human_sleep(0.06, 0.6, 0.02)
+
+
+def scroll_stage_list(hwnd: int, client: dict[str, int], wheel_steps: int, stage: str) -> None:
+    if stage == "1-1":
+        scroll_up(hwnd, client, wheel_steps)
+    else:
+        scroll_down(hwnd, client, wheel_steps)
+
+
 def save_debug_image(
     image: np.ndarray, match: tuple, output_path: Path
 ) -> None:
@@ -533,8 +564,8 @@ def is_owner_selection_screen(
 def verify_support_employees(client: dict[str, int]) -> bool:
     support_image = capture_region(client, SUPPORT_EMPLOYEE_REGION)
     required = {
-        "Sakiri": SUPPORT_EMPLOYEE_ASSET_DIR / "sakiri_card.png",
-        "Mint": SUPPORT_EMPLOYEE_ASSET_DIR / "mint_card.png",
+        "Sakiri": DEFAULT_SUPPORT_EMPLOYEE_ASSET_DIR / "sakiri_card.png",
+        "Mint": DEFAULT_SUPPORT_EMPLOYEE_ASSET_DIR / "mint_card.png",
     }
     missing: list[str] = []
     for name, path in required.items():
@@ -577,7 +608,7 @@ def verify_support_employees(client: dict[str, int]) -> bool:
 
 def support_page_visible(client: dict[str, int]) -> bool:
     title_template = cv2.imread(
-        str(SUPPORT_EMPLOYEE_PAGE_ASSET_DIR / "page_title.png"),
+        str(DEFAULT_SUPPORT_EMPLOYEE_PAGE_ASSET_DIR / "page_title.png"),
         cv2.IMREAD_GRAYSCALE,
     )
     if title_template is None:
@@ -623,22 +654,46 @@ def click_base_point(
     click(target["hwnd"], target["client"]["left"] + rel_x, target["client"]["top"] + rel_y)
 
 
+def support_asset_dir(stage: str, subfolder: str) -> Path:
+    asset_dir = WORKSPACE / STAGE_CONFIGS[stage]["asset_dir"] / subfolder
+    if asset_dir.exists():
+        return asset_dir
+    return (
+        DEFAULT_SUPPORT_EMPLOYEE_ASSET_DIR
+        if subfolder == "support_employee"
+        else DEFAULT_SUPPORT_EMPLOYEE_PAGE_ASSET_DIR
+    )
+
+
+def support_page_template(stage: str, name: str) -> Path:
+    stage_path = support_asset_dir(stage, "support_employee_page") / name
+    if stage_path.exists():
+        return stage_path
+    return DEFAULT_SUPPORT_EMPLOYEE_PAGE_ASSET_DIR / name
+
+
+def employee_template_name(prefix: str, name: str) -> str:
+    return f"{prefix}_{name.lower().replace(' ', '_')}.png"
+
+
 def support_top_slot_matches(
     client: dict[str, int],
+    stage: str,
+    slot: str,
     name: str,
     threshold: float = SUPPORT_TOP_SLOT_THRESHOLD,
 ) -> bool:
     template = cv2.imread(
-        str(SUPPORT_EMPLOYEE_PAGE_ASSET_DIR / f"top_{name.lower()}.png"),
+        str(support_page_template(stage, employee_template_name("top", name))),
         cv2.IMREAD_GRAYSCALE,
     )
     if template is None:
         log(f"Support top slot template missing name={name}")
         return False
-    image = capture_region(client, SUPPORT_TOP_SLOT_REGIONS[name], "center")
+    image = capture_region(client, SUPPORT_TOP_SLOT_REGIONS[slot], "center")
     match = find_template_multiscale(image, template, threshold)
     if match:
-        log(f"Support top slot verified name={name} score={match[3]:.3f}")
+        log(f"Support top slot verified slot={slot} name={name} score={match[3]:.3f}")
         return True
 
     page_image = capture_region(client, SUPPORT_PAGE_REGION, "center")
@@ -660,17 +715,17 @@ def support_top_slot_matches(
     return False
 
 
-def support_employee_selection_ready(client: dict[str, int]) -> bool:
-    return (
-        support_top_slot_matches(client, "Sakiri")
-        and support_top_slot_matches(client, "Mint")
-        and support_top_slot_matches(client, "Adler")
+def support_employee_selection_ready(client: dict[str, int], stage: str) -> bool:
+    employees = STAGE_CONFIGS[stage]["employees"]
+    return all(
+        support_top_slot_matches(client, stage, slot, name)
+        for slot, name in zip(("slot_1", "slot_2", "slot_3"), employees)
     )
 
 
 def confirm_support_employee(target: dict) -> None:
     click_base_point(target, SUPPORT_CONFIRM_POINT, "center")
-    human_sleep(0.8, 0.35)
+    human_sleep(0.25, 0.25)
 
 
 def save_support_debug(client: dict[str, int], name: str) -> None:
@@ -681,9 +736,72 @@ def save_support_debug(client: dict[str, int], name: str) -> None:
     log(f"Saved support debug image {path}")
 
 
-def prepare_support_employees_1_9(target: dict) -> bool:
+def click_support_employee(target: dict, stage: str, name: str) -> bool:
+    if stage == "1-1" and name == "Lacrimosa":
+        scroll_support_employee_list(target, -120, 8)
+
+    template = cv2.imread(
+        str(support_page_template(stage, employee_template_name("list", name))),
+        cv2.IMREAD_GRAYSCALE,
+    )
+    if template is not None and (template.shape[0] < 80 or template.shape[1] < 120):
+        log(
+            f"Prepare support: ignoring tiny list template "
+            f"name={name} size={template.shape[1]}x{template.shape[0]}"
+        )
+        template = None
+    if template is None and name in SUPPORT_LIST_POINTS:
+        click_base_point(target, SUPPORT_LIST_POINTS[name], "center")
+        return True
+    if template is None:
+        print(f"Missing Support Employee template: {name}.")
+        log(f"Prepare support: missing list template name={name} stage={stage}")
+        return False
+
+    for attempt in range(1, 9):
+        refreshed = find_nte_window() or target
+        target.update(refreshed)
+        page_image = capture_region(target["client"], SUPPORT_PAGE_REGION, "center")
+        match = find_template_multiscale(page_image, template, 0.62)
+        if match:
+            location, width, height, score = match
+            region = scale_region(target["client"], SUPPORT_PAGE_REGION, "center")
+            click_x = target["client"]["left"] + region["left"] + location[0] + width // 2
+            click_y = target["client"]["top"] + region["top"] + location[1] + height // 2
+            log(f"Prepare support: selecting {name} score={score:.3f} click=({click_x},{click_y})")
+            click(target["hwnd"], click_x, click_y)
+            return True
+
+        wheel_delta = -120 if attempt <= 4 else 120
+        log(
+            f"Prepare support: {name} not visible "
+            f"attempt={attempt}, scrolling delta={wheel_delta}"
+        )
+        x, y = scale_point(target["client"], LIST_MOUSE_POINT)
+        move_mouse(target["client"]["left"] + x, target["client"]["top"] + y)
+        user32.mouse_event(MOUSEEVENTF_WHEEL, 0, 0, wheel_delta, 0)
+        human_sleep(0.25, 0.45)
+
+    print(f"Could not find Support Employee: {name}.")
+    return False
+
+
+def scroll_support_employee_list(target: dict, wheel_delta: int, steps: int) -> None:
+    refreshed = find_nte_window() or target
+    target.update(refreshed)
+    x, y = scale_point(target["client"], (380, 442), "center")
+    move_mouse(target["client"]["left"] + x, target["client"]["top"] + y)
+    for _ in range(max(1, steps)):
+        user32.mouse_event(MOUSEEVENTF_WHEEL, 0, 0, wheel_delta, 0)
+        human_sleep(0.06, 0.6, 0.02)
+    human_sleep(0.35, 0.35)
+
+
+def prepare_support_employees(target: dict, stage: str = "1-9") -> bool:
     print("Checking Support Employee setup...")
-    log("Prepare support: checking current page")
+    employees = STAGE_CONFIGS[stage]["employees"]
+    employee_text = ", ".join(employees)
+    log(f"Prepare support: checking current page stage={stage} employees={employee_text}")
     refreshed = find_nte_window() or target
     target.update(refreshed)
 
@@ -692,7 +810,7 @@ def prepare_support_employees_1_9(target: dict) -> bool:
     else:
         log("Prepare support: opening page")
         click_base_point(target, SWAP_EMPLOYEE_POINT, "right")
-        human_sleep(0.8, 0.35)
+        human_sleep(0.45, 0.3)
         refreshed = find_nte_window() or target
         target.update(refreshed)
         if not wait_for_support_page(target["client"]):
@@ -701,55 +819,86 @@ def prepare_support_employees_1_9(target: dict) -> bool:
             return False
     save_support_debug(target["client"], "support_page_opened.png")
 
-    if support_employee_selection_ready(target["client"]):
+    if support_employee_selection_ready(target["client"], stage):
         log("Prepare support: already correct")
-        print("Support Employee checked: Sakiri, Mint, and Adler.")
+        print(f"Support Employee checked: {employee_text}.")
         confirm_support_employee(target)
         return True
 
-    print("Support Employee needs update. Selecting Sakiri and Mint...")
+    print(f"Support Employee needs update. Selecting {employees[0]} and {employees[1]}...")
     log("Prepare support: removing slot 1")
     # Remove the first two active slots, then re-select stage-specific employees.
     click_base_point(target, SUPPORT_TOP_SLOT_POINTS["slot_1"], "center")
-    human_sleep(0.35, 0.35)
+    human_sleep(0.22, 0.25)
     save_support_debug(target["client"], "support_after_slot_1_click.png")
     log("Prepare support: removing slot 2")
     click_base_point(target, SUPPORT_TOP_SLOT_POINTS["slot_2"], "center")
-    human_sleep(0.45, 0.35)
+    human_sleep(0.25, 0.25)
     save_support_debug(target["client"], "support_after_slot_2_click.png")
-    log("Prepare support: selecting Sakiri")
-    click_base_point(target, SUPPORT_LIST_POINTS["Sakiri"], "center")
-    human_sleep(0.4, 0.35)
-    save_support_debug(target["client"], "support_after_sakiri_click.png")
-    log("Prepare support: selecting Mint")
-    click_base_point(target, SUPPORT_LIST_POINTS["Mint"], "center")
-    human_sleep(0.8, 0.35)
-    save_support_debug(target["client"], "support_after_mint_click.png")
+    for name in employees[:2]:
+        log(f"Prepare support: selecting {name}")
+        if not click_support_employee(target, stage, name):
+            return False
+        human_sleep(0.28, 0.25)
+        save_support_debug(target["client"], f"support_after_{name.lower()}_click.png")
 
     refreshed = find_nte_window() or target
     target.update(refreshed)
-    if not support_employee_selection_ready(target["client"]):
+    if not support_employee_selection_ready(target["client"], stage):
         log("Prepare support: final verification failed")
-        print("Could not set Support Employee to Sakiri, Mint, and Adler.")
+        print(f"Could not set Support Employee to {employee_text}.")
         return False
 
     log("Prepare support: final verification succeeded")
-    print("Support Employee checked: Sakiri, Mint, and Adler.")
+    print(f"Support Employee checked: {employee_text}.")
     confirm_support_employee(target)
     return True
 
 
+def prepare_support_employees_1_9(target: dict) -> bool:
+    return prepare_support_employees(target, "1-9")
+
+
+def open_support_employee_page_only(target: dict) -> bool:
+    refreshed = find_nte_window() or target
+    target.update(refreshed)
+    if support_page_visible(target["client"]):
+        print("Support Employee page is already open.")
+        return True
+    click_base_point(target, SWAP_EMPLOYEE_POINT, "right")
+    human_sleep(0.8, 0.35)
+    refreshed = find_nte_window() or target
+    target.update(refreshed)
+    if wait_for_support_page(target["client"]):
+        print("Support Employee page opened.")
+        return True
+    print("Could not open Support Employee page.")
+    return False
+
+
 def open_shop_and_monitor(target: dict, args: argparse.Namespace) -> int:
-    if not args.skip_support_employee_check and not prepare_support_employees_1_9(target):
+    if not args.skip_support_employee_check and not prepare_support_employees(target, args.stage):
         return 7
 
     shop_rel_x, shop_rel_y = scale_point(target["client"], OPEN_SHOP_POINT, "right")
     shop_x = target["client"]["left"] + shop_rel_x
     shop_y = target["client"]["top"] + shop_rel_y
-    print("Da xac minh giao dien 1-9. Dang bam Open Shop...")
+    print(f"Da xac minh giao dien {args.stage}. Dang bam Open Shop...")
     log(f"Click Open Shop point=({shop_x},{shop_y})")
     click(target["hwnd"], shop_x, shop_y)
     print("Da bam Open Shop.")
+    if args.stage == "1-1":
+        print("Dang xu ly order stage 1-1...")
+        human_sleep(1.5, 0.35)
+        from stage_1_1_runner import run_stage_1_1
+
+        return run_stage_1_1(
+            watch=args.stage_1_1_watch,
+            interval=args.stage_1_1_interval,
+            threshold=args.stage_1_1_threshold,
+            cooldown=args.stage_1_1_cooldown,
+            revenue_goal=args.stage_1_1_revenue_goal,
+        )
     if not args.no_exit_monitor:
         print("Dang cho revenue dat 1,500 HOAC du 3 sao...")
         human_sleep(1.5, 0.35)
@@ -771,27 +920,28 @@ def open_shop_and_monitor(target: dict, args: argparse.Namespace) -> int:
 
 def main() -> int:
     parser = argparse.ArgumentParser(
-        description="Scroll Owner's Selection upward until stage 1-9 is visible, then click it."
+        description="Scroll Owner's Selection until the selected stage is visible, then click it."
     )
+    parser.add_argument("--stage", choices=sorted(STAGE_CONFIGS), default="1-9")
     parser.add_argument(
         "--template",
-        default=str(WORKSPACE / "stage_1_9_assets/stage_1_9_label.png"),
-        help="Template image for the unique 1-9 label",
+        default=None,
+        help="Template image for the unique stage label",
     )
     parser.add_argument(
         "--title-template",
-        default=str(WORKSPACE / "stage_1_9_assets/stage_1_9_title.png"),
-        help="Template used to verify that stage 1-9 is actually selected",
+        default=None,
+        help="Template used to verify that the stage is actually selected",
     )
     parser.add_argument(
         "--title-number-template",
-        default=str(WORKSPACE / "stage_1_9_assets/stage_1_9_selected_title_strict.png"),
-        help="Strict template used to verify the selected 1-9 title",
+        default=None,
+        help="Strict template used to verify the selected stage title",
     )
     parser.add_argument(
         "--number-template",
-        default=str(WORKSPACE / "stage_1_9_assets/stage_1_9_number.png"),
-        help="Template for the stable 1-9 number in the stage list",
+        default=None,
+        help="Template for the stable stage number in the stage list",
     )
     parser.add_argument("--threshold", type=float, default=0.75)
     parser.add_argument("--verify-threshold", type=float, default=0.65)
@@ -842,7 +992,14 @@ def main() -> int:
         default=str(WORKSPACE / "revenue_samples"),
         help="Folder for --sample-revenue-run crops",
     )
+    parser.add_argument("--stage-1-1-watch", type=float, default=0.0, help=argparse.SUPPRESS)
+    parser.add_argument("--stage-1-1-interval", type=float, default=0.18, help=argparse.SUPPRESS)
+    parser.add_argument("--stage-1-1-threshold", type=float, default=0.82, help=argparse.SUPPRESS)
+    parser.add_argument("--stage-1-1-cooldown", type=float, default=0.3, help=argparse.SUPPRESS)
+    parser.add_argument("--stage-1-1-revenue-goal", type=int, default=100, help=argparse.SUPPRESS)
     parser.add_argument("--skip-support-employee-check", action="store_true", help=argparse.SUPPRESS)
+    parser.add_argument("--open-support-only", action="store_true", help=argparse.SUPPRESS)
+    parser.add_argument("--select-stage-only", action="store_true", help=argparse.SUPPRESS)
     parser.add_argument("--elevated-child", action="store_true", help=argparse.SUPPRESS)
     args = parser.parse_args()
     log(f"Main start elevated={is_elevated()} argv={sys.argv!r}")
@@ -862,23 +1019,42 @@ def main() -> int:
         print("Khong the mo script bang Administrator.")
         return 4
 
-    template = cv2.imread(str(Path(args.template)), cv2.IMREAD_GRAYSCALE)
-    title_template = cv2.imread(str(Path(args.title_template)), cv2.IMREAD_GRAYSCALE)
-    title_number_template = cv2.imread(
-        str(Path(args.title_number_template)), cv2.IMREAD_GRAYSCALE
+    stage_label = STAGE_CONFIGS[args.stage]["label"]
+    stage_asset_dir = WORKSPACE / STAGE_CONFIGS[args.stage]["asset_dir"]
+    template_path = Path(args.template) if args.template else stage_asset_dir / f"stage_{args.stage.replace('-', '_')}_label.png"
+    title_template_path = (
+        Path(args.title_template)
+        if args.title_template
+        else stage_asset_dir / f"stage_{args.stage.replace('-', '_')}_title.png"
     )
-    number_template = cv2.imread(str(Path(args.number_template)), cv2.IMREAD_GRAYSCALE)
+    title_number_template_path = (
+        Path(args.title_number_template)
+        if args.title_number_template
+        else stage_asset_dir / f"stage_{args.stage.replace('-', '_')}_selected_title_strict.png"
+    )
+    number_template_path = (
+        Path(args.number_template)
+        if args.number_template
+        else stage_asset_dir / f"stage_{args.stage.replace('-', '_')}_number.png"
+    )
+
+    template = cv2.imread(str(template_path), cv2.IMREAD_GRAYSCALE)
+    title_template = cv2.imread(str(title_template_path), cv2.IMREAD_GRAYSCALE)
+    title_number_template = cv2.imread(
+        str(title_number_template_path), cv2.IMREAD_GRAYSCALE
+    )
+    number_template = cv2.imread(str(number_template_path), cv2.IMREAD_GRAYSCALE)
     owner_template = cv2.imread(
         str(WORKSPACE / "loop_assets/owners_selection_title.png"), cv2.IMREAD_GRAYSCALE
     )
     if template is None or title_template is None or owner_template is None:
-        print("Khong doc duoc template stage 1-9.")
+        print(f"Could not read template for stage {stage_label}.")
         return 1
 
     for attempt in range(1, args.attempts + 1):
         target = find_nte_window()
         if not target:
-            print("Khong tim thay cua so NTE 1280x720 tren man hinh trai.")
+            print("Could not find the NTE window.")
             return 2
 
         focus_window(target["hwnd"], 0.5)
@@ -892,14 +1068,17 @@ def main() -> int:
             print("Hay mo Owner's Selection/list stage truoc roi chay lai.")
             return 6
 
+        if args.open_support_only:
+            return 0 if open_support_employee_page_only(target) else 7
+
         if selected_stage_1_9(
             target["client"],
             title_template,
             title_number_template,
             args.verify_threshold,
         ):
-            print("Stage 1-9 dang duoc chon san, khong cuon danh sach.")
-            if not args.no_click:
+            print(f"Stage {stage_label} is already selected.")
+            if not args.no_click and not args.select_stage_only:
                 return open_shop_and_monitor(target, args)
             return 0
 
@@ -921,13 +1100,13 @@ def main() -> int:
                 image, match, WORKSPACE / "stage_1_9_debug/found_match.png"
             )
             print(
-                f"Da tim thay 1-9 trong danh sach, score={score:.3f}, "
+                f"Found stage {stage_label} in the list, score={score:.3f}, "
                 f"toa do click=({click_x}, {click_y})."
             )
             if not args.no_click:
                 log(f"Found match score={score:.3f} click=({click_x},{click_y})")
                 click(target["hwnd"], click_x, click_y)
-                print("Da bam stage 1-9.")
+                print(f"Clicked stage {stage_label}.")
                 if not wait_for_stage_1_9(
                     target["client"],
                     title_template,
@@ -935,8 +1114,10 @@ def main() -> int:
                     args.verify_threshold,
                     args.verify_timeout,
                 ):
-                    print("Chua xac minh duoc giao dien 1-9. KHONG bam Open Shop.")
+                    print(f"Could not verify stage {stage_label}. Did not click Open Shop.")
                     return 5
+                if args.select_stage_only:
+                    return 0
                 return open_shop_and_monitor(target, args)
             return 0
 
@@ -948,24 +1129,24 @@ def main() -> int:
                 WORKSPACE / "stage_1_9_debug/best_stage_1_9_candidate.png",
             )
             log(
-                "Stage 1-9 not matched "
+                f"Stage {stage_label} not matched "
                 f"attempt={attempt} best_score={best_match[3]:.3f} "
                 f"threshold={args.threshold:.3f} client={target['client']}"
             )
             print(
-                f"Lan {attempt}: chua thay 1-9 "
+                f"Attempt {attempt}: stage {stage_label} not found "
                 f"(best={best_match[3]:.3f}), dang cuon len..."
             )
         else:
             log(
-                "Stage 1-9 template larger than capture "
+                f"Stage {stage_label} template larger than capture "
                 f"attempt={attempt} client={target['client']}"
             )
-            print(f"Lan {attempt}: chua thay 1-9, dang cuon len...")
-        scroll_up(target["hwnd"], target["client"], args.wheel_steps)
+            print(f"Attempt {attempt}: stage {stage_label} not found, scrolling...")
+        scroll_stage_list(target["hwnd"], target["client"], args.wheel_steps, args.stage)
         human_sleep(args.wait, 0.4)
 
-    print("Het so lan tim kiem nhung chua thay stage 1-9.")
+    print(f"Could not find stage {stage_label}.")
     return 3
 
 

@@ -1,0 +1,100 @@
+{
+  "version": 1,
+  "stage": "1-1",
+  "item": "black_coffee",
+  "created_at": "2026-07-30 02:19:47",
+  "client": {
+    "width": 1600,
+    "height": 900
+  },
+  "steps": [
+    {
+      "index": 1,
+      "elapsed_sec": 0.94,
+      "screen": {
+        "x": 1582,
+        "y": 921
+      },
+      "local": {
+        "x": 1422,
+        "y": 831
+      },
+      "base_1280x720": {
+        "x": 1138,
+        "y": 665
+      },
+      "ratio": {
+        "x": 0.88875,
+        "y": 0.923333
+      },
+      "before_image": "step_01_before.png",
+      "after_image": "step_01_after.png"
+    },
+    {
+      "index": 2,
+      "elapsed_sec": 9.236,
+      "screen": {
+        "x": 1654,
+        "y": 718
+      },
+      "local": {
+        "x": 1494,
+        "y": 628
+      },
+      "base_1280x720": {
+        "x": 1195,
+        "y": 502
+      },
+      "ratio": {
+        "x": 0.93375,
+        "y": 0.697778
+      },
+      "before_image": "step_02_before.png",
+      "after_image": "step_02_after.png"
+    },
+    {
+      "index": 3,
+      "elapsed_sec": 13.283,
+      "screen": {
+        "x": 1664,
+        "y": 918
+      },
+      "local": {
+        "x": 1504,
+        "y": 828
+      },
+      "base_1280x720": {
+        "x": 1203,
+        "y": 662
+      },
+      "ratio": {
+        "x": 0.94,
+        "y": 0.92
+      },
+      "before_image": "step_03_before.png",
+      "after_image": "step_03_after.png"
+    },
+    {
+      "index": 4,
+      "elapsed_sec": 16.75,
+      "screen": {
+        "x": 1420,
+        "y": 608
+      },
+      "local": {
+        "x": 1260,
+        "y": 518
+      },
+      "base_1280x720": {
+        "x": 1008,
+        "y": 414
+      },
+      "ratio": {
+        "x": 0.7875,
+        "y": 0.575556
+      },
+      "before_image": "step_04_before.png",
+      "after_image": "step_04_after.png"
+    }
+  ]
+}

@@ -163,7 +163,8 @@ button {
 
 .update-button,
 .primary-action,
-.danger-action {
+.danger-action,
+.test-action {
   border: 0;
   border-radius: 6px;
   font-weight: 650;
@@ -688,12 +689,14 @@ button {
 
 .action-stack {
   display: grid;
-  grid-template-rows: 1fr 1fr;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  grid-auto-rows: minmax(0, 1fr);
   gap: 8px;
 }
 
 .primary-action,
-.danger-action {
+.danger-action,
+.test-action {
   display: flex;
   align-items: center;
   justify-content: center;
@@ -724,8 +727,20 @@ button {
   border-color: rgba(239, 68, 68, 0.4);
 }
 
+.test-action {
+  color: var(--foreground);
+  background: rgba(96, 165, 250, 0.1);
+  border-color: rgba(96, 165, 250, 0.22);
+}
+
+.test-action:hover {
+  background: rgba(96, 165, 250, 0.16);
+  border-color: rgba(96, 165, 250, 0.42);
+}
+
 .primary-action:disabled,
-.danger-action:disabled {
+.danger-action:disabled,
+.test-action:disabled {
   opacity: 0.35;
   cursor: not-allowed;
 }

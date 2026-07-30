@@ -1,0 +1,78 @@
+{
+  "version": 1,
+  "stage": "1-1",
+  "item": "cupcake",
+  "created_at": "2026-07-30 02:49:44",
+  "client": {
+    "width": 1600,
+    "height": 900
+  },
+  "steps": [
+    {
+      "index": 1,
+      "elapsed_sec": 3.338,
+      "screen": {
+        "x": 975,
+        "y": 923
+      },
+      "local": {
+        "x": 815,
+        "y": 833
+      },
+      "base_1280x720": {
+        "x": 652,
+        "y": 666
+      },
+      "ratio": {
+        "x": 0.509375,
+        "y": 0.925556
+      },
+      "before_image": "step_01_before.png",
+      "after_image": "step_01_after.png"
+    },
+    {
+      "index": 2,
+      "elapsed_sec": 5.79,
+      "screen": {
+        "x": 1225,
+        "y": 937
+      },
+      "local": {
+        "x": 1065,
+        "y": 847
+      },
+      "base_1280x720": {
+        "x": 852,
+        "y": 678
+      },
+      "ratio": {
+        "x": 0.665625,
+        "y": 0.941111
+      },
+      "before_image": "step_02_before.png",
+      "after_image": "step_02_after.png"
+    },
+    {
+      "index": 3,
+      "elapsed_sec": 9.837,
+      "screen": {
+        "x": 1027,
+        "y": 626
+      },
+      "local": {
+        "x": 867,
+        "y": 536
+      },
+      "base_1280x720": {
+        "x": 694,
+        "y": 429
+      },
+      "ratio": {
+        "x": 0.541875,
+        "y": 0.595556
+      },
+      "before_image": "step_03_before.png",
+      "after_image": "step_03_after.png"
+    }
+  ]
+}

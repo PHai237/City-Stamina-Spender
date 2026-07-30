@@ -1,0 +1,398 @@
+from __future__ import annotations
+
+import argparse
+import time
+from dataclasses import dataclass
+from pathlib import Path
+
+import cv2
+import numpy as np
+
+from play import (
+    capture_region,
+    find_nte_window,
+    find_template_multiscale,
+    focus_window,
+    log,
+    ui_scale,
+)
+
+
+WORKSPACE = Path(__file__).resolve().parent
+ASSET_DIR = WORKSPACE / "stage_1_1_assets" / "items"
+ORDER_ASSET_DIR = WORKSPACE / "stage_1_1_assets" / "orders"
+DEBUG_DIR = WORKSPACE / "stage_1_1_debug"
+DEFAULT_ORDER_THRESHOLD = 0.82
+
+# Base 1280x720 regions. Keep the first pass broad because order bubbles need
+# real gameplay screenshots before we can tighten this properly.
+DEFAULT_SCAN_REGION = {"left": 220, "top": 80, "width": 1040, "height": 560}
+ORDER_SCAN_REGION = {"left": 80, "top": 70, "width": 820, "height": 300}
+
+
+@dataclass(frozen=True)
+class ItemTemplate:
+    item_id: int
+    key: str
+    label: str
+    path: Path
+    min_score: float = 0.82
+    bias: float = 0.0
+
+
+@dataclass(frozen=True)
+class ItemMatch:
+    item: ItemTemplate
+    x: int
+    y: int
+    width: int
+    height: int
+    score: float
+    scale: float = 1.0
+
+
+ITEM_TEMPLATES = [
+    ItemTemplate(1, "black_coffee", "Black coffee", ASSET_DIR / "01_black_coffee.png"),
+    ItemTemplate(2, "white_coffee", "White coffee", ASSET_DIR / "02_white_coffee.png"),
+    ItemTemplate(3, "sandwich", "Sandwich", ASSET_DIR / "03_sandwich.png"),
+    ItemTemplate(4, "croissant", "Croissant", ASSET_DIR / "04_croissant.png"),
+    ItemTemplate(5, "cupcake", "Cupcake", ASSET_DIR / "05_cupcake.png"),
+    ItemTemplate(6, "tomato_juice", "Tomato juice", ASSET_DIR / "06_tomato_juice.png"),
+]
+
+ORDER_TEMPLATES = [
+    ItemTemplate(1, "black_coffee", "Black coffee", ORDER_ASSET_DIR / "01_black_coffee_order_icon.png"),
+    ItemTemplate(2, "white_coffee", "White coffee", ORDER_ASSET_DIR / "02_white_coffee_order_icon.png"),
+    ItemTemplate(3, "sandwich", "Sandwich", ORDER_ASSET_DIR / "03_sandwich_order_icon.png"),
+    ItemTemplate(4, "croissant", "Croissant", ORDER_ASSET_DIR / "04_croissant_order_icon.png", 0.84),
+    ItemTemplate(5, "cupcake", "Cupcake", ORDER_ASSET_DIR / "05_cupcake_order_icon.png"),
+    ItemTemplate(6, "tomato_juice", "Tomato juice", ORDER_ASSET_DIR / "06_tomato_juice_order_icon.png", 0.80, 0.03),
+    ItemTemplate(6, "tomato_juice_bubble", "Tomato juice", ORDER_ASSET_DIR / "06_tomato_juice_order.png", 0.72, 0.08),
+]
+
+
+def load_item_template(item: ItemTemplate) -> np.ndarray | None:
+    template = cv2.imread(str(item.path), cv2.IMREAD_GRAYSCALE)
+    if template is None:
+        log(f"Stage 1-1 item template missing item={item.key} path={item.path}")
+    return template
+
+
+def effective_threshold(item: ItemTemplate, requested: float) -> float:
+    if item.path.parent != ORDER_ASSET_DIR:
+        return requested
+
+    # Keep each order template's tuned offset, while still allowing the CLI
+    # threshold to raise/lower the whole detector consistently.
+    adjusted = item.min_score + (requested - DEFAULT_ORDER_THRESHOLD)
+    return min(0.98, max(0.55, adjusted))
+
+
+def candidate_scales(client: dict[str, int], item: ItemTemplate) -> tuple[float, ...]:
+    base = ui_scale(client)
+    # Order icons change size slightly with NPC depth. Search around the actual
+    # client UI scale instead of using the same absolute scales at every resolution.
+    multipliers = (
+        (0.84, 0.92, 0.98, 1.0, 1.05, 1.12, 1.20)
+        if item.key == "tomato_juice_bubble"
+        else (0.78, 0.86, 0.93, 0.98, 1.0, 1.05, 1.12, 1.20, 1.28)
+    )
+    return tuple(sorted({round(base * multiplier, 3) for multiplier in multipliers}))
+
+
+def overlap_ratio(a: ItemMatch, b: ItemMatch) -> float:
+    left = max(a.x, b.x)
+    top = max(a.y, b.y)
+    right = min(a.x + a.width, b.x + b.width)
+    bottom = min(a.y + a.height, b.y + b.height)
+    overlap = max(0, right - left) * max(0, bottom - top)
+    if overlap <= 0:
+        return 0.0
+    smaller = min(a.width * a.height, b.width * b.height)
+    return overlap / max(1, smaller)
+
+
+def detect_templates(
+    client: dict[str, int],
+    templates: list[ItemTemplate],
+    region: dict[str, int] | None = None,
+    threshold: float = 0.66,
+    multi: bool = False,
+) -> tuple[np.ndarray, list[ItemMatch]]:
+    region = region or DEFAULT_SCAN_REGION
+    image = capture_region(client, region, "left")
+    matches: list[ItemMatch] = []
+    for item in templates:
+        template = load_item_template(item)
+        if template is None:
+            continue
+
+        item_threshold = effective_threshold(item, threshold)
+        scales = candidate_scales(client, item)
+        if multi:
+            matches.extend(
+                find_template_multiscale_all(
+                    image,
+                    template,
+                    item,
+                    item_threshold,
+                    scales=scales,
+                )
+            )
+            continue
+
+        match = find_template_multiscale(image, template, item_threshold, scales=scales)
+        if not match:
+            best = find_template_multiscale(image, template, 0.0, scales=scales)
+            if best:
+                log(
+                    f"Stage 1-1 item not matched item={item.key} "
+                    f"best={best[3]:.3f} threshold={item_threshold:.3f}"
+                )
+            continue
+        location, width, height, score = match
+        scale = width / max(1, template.shape[1])
+        matches.append(ItemMatch(item, location[0], location[1], width, height, score, scale))
+
+    kept = suppress_overlapping_matches(matches, overlap_threshold=0.45)
+    kept.sort(key=lambda match: (match.y, match.x))
+    return image, kept
+
+
+def rank_match(match: ItemMatch) -> float:
+    return match.score + match.item.bias
+
+
+def match_conflicts(a: ItemMatch, b: ItemMatch, overlap_threshold: float) -> bool:
+    if overlap_ratio(a, b) >= overlap_threshold:
+        return True
+
+    # The full tomato bubble template is larger than the cropped item icons.
+    # Nearby centers are therefore a better same-bubble signal than IoU alone.
+    center_a = (a.x + a.width / 2, a.y + a.height / 2)
+    center_b = (b.x + b.width / 2, b.y + b.height / 2)
+    distance_x = abs(center_a[0] - center_b[0])
+    distance_y = abs(center_a[1] - center_b[1])
+    return distance_x <= max(a.width, b.width) * 0.55 and distance_y <= max(a.height, b.height) * 0.55
+
+
+def better_match(candidate: ItemMatch, existing: ItemMatch) -> bool:
+    item_pair = {candidate.item.item_id, existing.item.item_id}
+    if item_pair == {4, 6}:
+        tomato = candidate if candidate.item.item_id == 6 else existing
+        croissant = candidate if candidate.item.item_id == 4 else existing
+        tomato_rank = rank_match(tomato)
+        croissant_rank = rank_match(croissant)
+
+        # The full-bubble tomato template is independent evidence and should
+        # beat a visually similar croissant icon unless croissant wins clearly.
+        tomato_has_bubble_evidence = (
+            tomato.item.key == "tomato_juice_bubble"
+            and tomato.score >= effective_threshold(tomato.item, DEFAULT_ORDER_THRESHOLD)
+        )
+        if tomato_has_bubble_evidence or tomato_rank >= croissant_rank - 0.025:
+            winner = tomato
+        elif croissant_rank >= tomato_rank + 0.065:
+            winner = croissant
+        else:
+            winner = tomato
+
+        log(
+            "Stage 1-1 order conflict croissant/tomato "
+            f"croissant={croissant.score:.3f}/{croissant_rank:.3f} "
+            f"tomato={tomato.score:.3f}/{tomato_rank:.3f} "
+            f"tomato_template={tomato.item.key} winner={winner.item.key}"
+        )
+        return winner is candidate
+
+    return rank_match(candidate) > rank_match(existing)
+
+
+def suppress_overlapping_matches(matches: list[ItemMatch], overlap_threshold: float) -> list[ItemMatch]:
+    ordered = sorted(matches, key=rank_match, reverse=True)
+    kept: list[ItemMatch] = []
+    for match in ordered:
+        conflict_index = next(
+            (
+                index
+                for index, existing in enumerate(kept)
+                if match_conflicts(match, existing, overlap_threshold)
+            ),
+            None,
+        )
+        if conflict_index is None:
+            kept.append(match)
+        elif better_match(match, kept[conflict_index]):
+            kept[conflict_index] = match
+    return kept
+
+
+def find_template_multiscale_all(
+    image: np.ndarray,
+    template: np.ndarray,
+    item: ItemTemplate,
+    threshold: float,
+    scales: tuple[float, ...],
+    max_per_scale: int = 12,
+) -> list[ItemMatch]:
+    candidates: list[ItemMatch] = []
+    for scale in scales:
+        width = max(1, round(template.shape[1] * scale))
+        height = max(1, round(template.shape[0] * scale))
+        if width > image.shape[1] or height > image.shape[0]:
+            continue
+
+        interpolation = cv2.INTER_AREA if scale <= 1.0 else cv2.INTER_CUBIC
+        scaled_template = cv2.resize(template, (width, height), interpolation=interpolation)
+        result = cv2.matchTemplate(image, scaled_template, cv2.TM_CCOEFF_NORMED)
+        ys, xs = np.where(result >= threshold)
+        if len(xs) == 0:
+            continue
+
+        scale_candidates = sorted(
+            (
+                ItemMatch(item, int(x), int(y), width, height, float(result[y, x]), scale)
+                for x, y in zip(xs, ys)
+            ),
+            key=lambda match: match.score,
+            reverse=True,
+        )[:max_per_scale]
+        candidates.extend(scale_candidates)
+
+    return suppress_overlapping_matches(candidates, overlap_threshold=0.35)
+
+
+def detect_items(
+    client: dict[str, int],
+    region: dict[str, int] | None = None,
+    threshold: float = 0.66,
+) -> tuple[np.ndarray, list[ItemMatch]]:
+    return detect_templates(client, ITEM_TEMPLATES, region or DEFAULT_SCAN_REGION, threshold)
+
+
+def detect_order_bubbles(
+    client: dict[str, int],
+    region: dict[str, int] | None = None,
+    threshold: float = DEFAULT_ORDER_THRESHOLD,
+    templates: list[ItemTemplate] | None = None,
+    multi: bool = False,
+) -> tuple[np.ndarray, list[ItemMatch]]:
+    return detect_templates(client, templates or ORDER_TEMPLATES, region or ORDER_SCAN_REGION, threshold, multi)
+
+
+def save_debug(image: np.ndarray, matches: list[ItemMatch], output_path: Path) -> None:
+    debug = cv2.cvtColor(image, cv2.COLOR_GRAY2BGR)
+    for match in matches:
+        color = {
+            1: (0, 180, 255),
+            2: (255, 220, 120),
+            4: (255, 170, 40),
+            6: (40, 80, 255),
+        }.get(match.item.item_id, (255, 255, 255))
+        cv2.rectangle(
+            debug,
+            (match.x, match.y),
+            (match.x + match.width, match.y + match.height),
+            color,
+            2,
+        )
+        cv2.putText(
+            debug,
+            f"{match.item.item_id}:{match.score:.2f} s={match.scale:.2f}",
+            (match.x, max(18, match.y - 6)),
+            cv2.FONT_HERSHEY_SIMPLEX,
+            0.50,
+            color,
+            2,
+        )
+    output_path.parent.mkdir(parents=True, exist_ok=True)
+    cv2.imwrite(str(output_path), debug)
+
+
+def main() -> int:
+    parser = argparse.ArgumentParser(description="Detect Stage 1-1 order/item icons on the NTE screen.")
+    parser.add_argument("--threshold", type=float, default=DEFAULT_ORDER_THRESHOLD)
+    parser.add_argument("--orders", action="store_true", help="Detect NPC order bubbles instead of item cards.")
+    parser.add_argument("--item-id", type=int, choices=range(1, 7), help="Only detect one item id.")
+    parser.add_argument("--multi", action="store_true", help="Return every visible match for the selected template.")
+    parser.add_argument("--debug-dir", default=str(DEBUG_DIR))
+    parser.add_argument("--watch", type=float, default=0.0, help="Seconds to keep scanning; 0 means one scan.")
+    parser.add_argument("--interval", type=float, default=0.5)
+    parser.add_argument("--no-focus", action="store_true")
+    args = parser.parse_args()
+
+    prefix = "orders" if args.orders else "items"
+    none_line = "ORDER_MATCHES=none" if args.orders else "ITEM_MATCHES=none"
+    line_prefix = "ORDER_MATCH" if args.orders else "ITEM_MATCH"
+    deadline = time.monotonic() + args.watch if args.watch > 0 else None
+    last_report = ""
+    found_any = False
+
+    while True:
+        target = find_nte_window()
+        if not target:
+            print("NTE window was not found.")
+            return 2
+        if not args.no_focus:
+            focus_window(target["hwnd"], 0.25)
+            target = find_nte_window() or target
+
+        if args.item_id:
+            templates = [
+                item
+                for item in (ORDER_TEMPLATES if args.orders else ITEM_TEMPLATES)
+                if item.item_id == args.item_id
+            ]
+        else:
+            templates = ORDER_TEMPLATES if args.orders else ITEM_TEMPLATES
+
+        if args.orders:
+            image, matches = detect_order_bubbles(
+                target["client"],
+                threshold=args.threshold,
+                templates=templates,
+                multi=args.multi,
+            )
+        else:
+            image, matches = detect_templates(
+                target["client"],
+                templates,
+                DEFAULT_SCAN_REGION,
+                args.threshold,
+                args.multi,
+            )
+
+        timestamp = time.strftime("%Y%m%d_%H%M%S")
+        save_debug(image, matches, Path(args.debug_dir) / f"{prefix}_{timestamp}.png")
+
+        if matches:
+            found_any = True
+            report = "|".join(
+                f"{match.item.item_id}:{match.x}:{match.y}:{match.score:.3f}:{match.scale:.3f}"
+                for match in matches
+            )
+            if report != last_report:
+                last_report = report
+                for match in matches:
+                    print(
+                        f"{line_prefix} "
+                        f"id={match.item.item_id} key={match.item.key} score={match.score:.3f} "
+                        f"scale={match.scale:.3f} x={match.x} y={match.y} "
+                        f"w={match.width} h={match.height}"
+                    )
+        elif deadline is None:
+            print(none_line)
+            return 3
+
+        if deadline is None or time.monotonic() >= deadline:
+            break
+        time.sleep(max(0.1, args.interval))
+
+    if not found_any:
+        print(none_line)
+        return 3
+    return 0
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())
