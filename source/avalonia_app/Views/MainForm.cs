@@ -191,6 +191,12 @@ public sealed class MainForm : Form
             directory = directory.Parent;
         }
 
+        var embeddedIndexPath = Path.Combine(EmbeddedAppData.LocalDataDir, "web_ui", "index.html");
+        if (File.Exists(embeddedIndexPath))
+        {
+            return embeddedIndexPath;
+        }
+
         return Path.Combine(Directory.GetCurrentDirectory(), "web_ui", "index.html");
     }
 }

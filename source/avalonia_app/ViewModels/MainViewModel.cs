@@ -18,7 +18,7 @@ namespace CityStamina.Avalonia.ViewModels;
 
 public partial class MainViewModel : ViewModelBase
 {
-    public const string AppVersion = "1.2.2";
+    public const string AppVersion = "1.2.3";
     private const string LatestManifestUrl = "https://raw.githubusercontent.com/PHai237/City-Stamina-Spender/main/latest.json";
     private const string StageOneNine = "Stage 1-9";
     private const string StageOneOne = "Stage 1-1";
@@ -413,25 +413,31 @@ public partial class MainViewModel : ViewModelBase
             UpdateMessage = $"Downloading version {LatestVersion}...";
 
             var tempDir = Path.Combine(Path.GetTempPath(), "CityStaminaUpdate_" + Guid.NewGuid().ToString("N"));
-            var extractDir = Path.Combine(tempDir, "extract");
-            var zipPath = Path.Combine(tempDir, "update.zip");
-            Directory.CreateDirectory(extractDir);
+            Directory.CreateDirectory(tempDir);
+            var isExeUpdate = _latestDownloadUrl.EndsWith(".exe", StringComparison.OrdinalIgnoreCase);
+            var downloadPath = Path.Combine(tempDir, isExeUpdate ? "City Stamina Spender.exe" : "update.zip");
 
             using var client = CreateHttpClient();
             await using (var source = await client.GetStreamAsync(_latestDownloadUrl))
-            await using (var target = File.Create(zipPath))
+            await using (var target = File.Create(downloadPath))
             {
                 await source.CopyToAsync(target);
             }
 
-            ZipFile.ExtractToDirectory(zipPath, extractDir, overwriteFiles: true);
-            var sourceDir = FindExtractedUpdateDirectory(extractDir);
-            var scriptPath = WriteUpdaterScript(tempDir);
+            string? sourceDir = null;
+            if (!isExeUpdate)
+            {
+                var extractDir = Path.Combine(tempDir, "extract");
+                Directory.CreateDirectory(extractDir);
+                ZipFile.ExtractToDirectory(downloadPath, extractDir, overwriteFiles: true);
+                sourceDir = FindExtractedUpdateDirectory(extractDir);
+            }
+            var scriptPath = WriteUpdaterScript(tempDir, isExeUpdate);
 
-            var currentExe = Path.Combine(_rootDir, "City Stamina Spender.exe");
+            var currentExe = Environment.ProcessPath ?? Path.Combine(_rootDir, "City Stamina Spender.exe");
             var args =
                 "-NoProfile -ExecutionPolicy Bypass -File " + Quote(scriptPath) +
-                " -Source " + Quote(sourceDir) +
+                " -Source " + Quote(sourceDir ?? tempDir) +
                 " -Target " + Quote(_rootDir) +
                 " -Exe " + Quote(currentExe) +
                 " -Pid " + Environment.ProcessId.ToString(CultureInfo.InvariantCulture) +
@@ -848,10 +854,29 @@ public partial class MainViewModel : ViewModelBase
         throw new InvalidOperationException("Downloaded update package is not valid.");
     }
 
-    private static string WriteUpdaterScript(string tempDir)
+    private static string WriteUpdaterScript(string tempDir, bool exeUpdate)
     {
         var scriptPath = Path.Combine(tempDir, "apply_update.ps1");
-        var script = """
+        var script = exeUpdate
+            ? """
+param(
+  [string]$Source,
+  [string]$Target,
+  [string]$Exe,
+  [int]$Pid,
+  [string]$Temp
+)
+
+$ErrorActionPreference = 'Stop'
+Start-Sleep -Milliseconds 800
+try { Wait-Process -Id $Pid -ErrorAction SilentlyContinue } catch {}
+
+Copy-Item -LiteralPath (Join-Path $Source 'City Stamina Spender.exe') -Destination $Exe -Force
+Start-Process -FilePath $Exe -WorkingDirectory (Split-Path -Parent $Exe)
+Start-Sleep -Seconds 2
+try { Remove-Item -LiteralPath $Temp -Recurse -Force } catch {}
+"""
+            : """
 param(
   [string]$Source,
   [string]$Target,
@@ -909,6 +934,11 @@ try { Remove-Item -LiteralPath $Temp -Recurse -Force } catch {}
 
     private static (string RootDir, string DataDir) FindApplicationDirectories()
     {
+        if (EmbeddedAppData.FindDevelopmentSourceDir() is { } sourceDir)
+        {
+            return (Directory.GetParent(sourceDir)?.FullName ?? Directory.GetCurrentDirectory(), sourceDir);
+        }
+
         var directory = new DirectoryInfo(AppContext.BaseDirectory);
         while (directory is not null)
         {
@@ -932,6 +962,11 @@ try { Remove-Item -LiteralPath $Temp -Recurse -Force } catch {}
             }
 
             directory = directory.Parent;
+        }
+
+        if (EmbeddedAppData.HasUsableAppData(EmbeddedAppData.LocalDataDir))
+        {
+            return (Path.GetDirectoryName(Environment.ProcessPath) ?? AppContext.BaseDirectory, EmbeddedAppData.LocalDataDir);
         }
 
         var current = Directory.GetCurrentDirectory();

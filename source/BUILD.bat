@@ -46,6 +46,14 @@ if errorlevel 1 (
   exit /b 1
 )
 
+echo Creating embedded app data bundle...
+python "tools\create_app_data_bundle.py"
+if errorlevel 1 (
+  echo Embedded app data bundle failed.
+  pause
+  exit /b 1
+)
+
 echo Building City Stamina Spender...
 dotnet publish "avalonia_app\CityStamina.Avalonia.csproj" ^
   -c Release ^
@@ -68,6 +76,5 @@ del /Q "webview_publish\*.pdb" >nul 2>&1
 del /Q "build\*.spec" >nul 2>&1
 
 echo Done: City Stamina Spender.exe
-echo Release layout should include City Stamina Spender.exe and app_data.
-echo Your friend only needs to open City Stamina Spender.exe.
+echo Release layout is one file: City Stamina Spender.exe
 pause

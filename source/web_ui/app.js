@@ -18,8 +18,8 @@ const state = {
   isDetailVisible: false,
   isRunning: false,
   stageDropdownOpen: false,
-  currentVersion: "1.2.2",
-  latestVersion: "1.2.2",
+  currentVersion: "1.2.3",
+  latestVersion: "1.2.3",
   updateState: "checking",
   updateMessage: "Checking for updates...",
   isUpdateAvailable: false,
@@ -113,7 +113,7 @@ function statusbar() {
   const dotColor = state.isRunning ? "var(--warning)" : "var(--primary)";
   return `
     <div class="statusbar">
-      <span class="mono">v1.2.2 - engine online</span>
+      <span class="mono">v1.2.3 - engine online</span>
       <span class="inline mono"><span class="dot" style="color:${dotColor}"></span>${statusText}</span>
     </div>
   `;

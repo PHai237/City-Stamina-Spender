@@ -14,6 +14,7 @@
       <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
       <Link>web_ui\%(RecursiveDir)%(Filename)%(Extension)</Link>
     </Content>
+    <EmbeddedResource Include="Embedded\app_data.zip" Condition="Exists('Embedded\app_data.zip')" LogicalName="CityStamina.AppData.zip" />
   </ItemGroup>
 
   <ItemGroup>
