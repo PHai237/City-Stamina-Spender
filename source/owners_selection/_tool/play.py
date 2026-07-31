@@ -25,6 +25,12 @@ MOUSEEVENTF_ABSOLUTE = 0x8000
 MOUSEEVENTF_VIRTUALDESK = 0x4000
 INPUT_MOUSE = 0
 SW_RESTORE = 9
+SW_SHOW = 5
+HWND_TOPMOST = -1
+HWND_NOTOPMOST = -2
+SWP_NOSIZE = 0x0001
+SWP_NOMOVE = 0x0002
+SWP_SHOWWINDOW = 0x0040
 
 # Coordinates relative to the base 1280x720 NTE client area.
 BASE_WIDTH = 1280
@@ -308,6 +314,12 @@ def focus_window(hwnd: int, settle: float = 0.5) -> None:
     if user32.IsIconic(hwnd):
         user32.ShowWindow(hwnd, SW_RESTORE)
         human_sleep(0.2, 0.35)
+    else:
+        user32.ShowWindow(hwnd, SW_SHOW)
+    user32.SetForegroundWindow(hwnd)
+    user32.BringWindowToTop(hwnd)
+    user32.SetWindowPos(hwnd, HWND_TOPMOST, 0, 0, 0, 0, SWP_NOMOVE | SWP_NOSIZE | SWP_SHOWWINDOW)
+    user32.SetWindowPos(hwnd, HWND_NOTOPMOST, 0, 0, 0, 0, SWP_NOMOVE | SWP_NOSIZE | SWP_SHOWWINDOW)
     user32.SetForegroundWindow(hwnd)
     human_sleep(settle, 0.25)
 
@@ -356,6 +368,29 @@ def click(hwnd: int, x: int, y: int) -> None:
     human_sleep(0.12, 0.45)
     send_mouse(MOUSEEVENTF_LEFTUP)
     log("Click finished")
+
+
+def fast_click(hwnd: int, x: int, y: int, focus_delay: float = 0.0) -> None:
+    log(f"Fast click start elevated={is_elevated()} hwnd={hwnd} point=({x},{y})")
+    if focus_delay > 0:
+        focus_window(hwnd, focus_delay)
+
+    virtual_left = user32.GetSystemMetrics(76)
+    virtual_top = user32.GetSystemMetrics(77)
+    virtual_width = user32.GetSystemMetrics(78)
+    virtual_height = user32.GetSystemMetrics(79)
+    absolute_x = round((x - virtual_left) * 65535 / (virtual_width - 1))
+    absolute_y = round((y - virtual_top) * 65535 / (virtual_height - 1))
+    send_mouse(
+        MOUSEEVENTF_MOVE | MOUSEEVENTF_ABSOLUTE | MOUSEEVENTF_VIRTUALDESK,
+        absolute_x,
+        absolute_y,
+    )
+    time.sleep(0.025)
+    send_mouse(MOUSEEVENTF_LEFTDOWN)
+    time.sleep(0.035)
+    send_mouse(MOUSEEVENTF_LEFTUP)
+    log("Fast click finished")
 
 
 def scroll_up(hwnd: int, client: dict[str, int], wheel_steps: int) -> None:
@@ -877,19 +912,16 @@ def open_support_employee_page_only(target: dict) -> bool:
 
 
 def open_shop_and_monitor(target: dict, args: argparse.Namespace) -> int:
-    if not args.skip_support_employee_check and not prepare_support_employees(target, args.stage):
-        return 7
-
     shop_rel_x, shop_rel_y = scale_point(target["client"], OPEN_SHOP_POINT, "right")
     shop_x = target["client"]["left"] + shop_rel_x
     shop_y = target["client"]["top"] + shop_rel_y
     print(f"Da xac minh giao dien {args.stage}. Dang bam Open Shop...")
     log(f"Click Open Shop point=({shop_x},{shop_y})")
-    click(target["hwnd"], shop_x, shop_y)
+    fast_click(target["hwnd"], shop_x, shop_y, focus_delay=0.08)
     print("Da bam Open Shop.")
     if args.stage == "1-1":
         print("Dang xu ly order stage 1-1...")
-        human_sleep(1.5, 0.35)
+        human_sleep(0.25, 0.08)
         from stage_1_1_runner import run_stage_1_1
 
         return run_stage_1_1(
@@ -901,7 +933,7 @@ def open_shop_and_monitor(target: dict, args: argparse.Namespace) -> int:
         )
     if not args.no_exit_monitor:
         print("Dang cho revenue dat 1,500 HOAC du 3 sao...")
-        human_sleep(1.5, 0.35)
+        human_sleep(1.0, 0.18)
         from monitor import monitor_and_exit, sample_revenue_and_exit
 
         if args.sample_revenue_run:
@@ -995,7 +1027,7 @@ def main() -> int:
     parser.add_argument("--stage-1-1-watch", type=float, default=0.0, help=argparse.SUPPRESS)
     parser.add_argument("--stage-1-1-interval", type=float, default=0.18, help=argparse.SUPPRESS)
     parser.add_argument("--stage-1-1-threshold", type=float, default=0.82, help=argparse.SUPPRESS)
-    parser.add_argument("--stage-1-1-cooldown", type=float, default=0.3, help=argparse.SUPPRESS)
+    parser.add_argument("--stage-1-1-cooldown", type=float, default=0.18, help=argparse.SUPPRESS)
     parser.add_argument("--stage-1-1-revenue-goal", type=int, default=100, help=argparse.SUPPRESS)
     parser.add_argument("--skip-support-employee-check", action="store_true", help=argparse.SUPPRESS)
     parser.add_argument("--open-support-only", action="store_true", help=argparse.SUPPRESS)

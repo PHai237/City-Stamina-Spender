@@ -5,9 +5,15 @@ import time
 
 import cv2
 
+from stage_1_1_actions import StageOneOneActions
 from stage_1_1_orders import DEBUG_DIR as ORDER_DEBUG_DIR
-from stage_1_1_orders import ItemMatch, ORDER_TEMPLATES, detect_order_bubbles, save_debug
-from stage_1_1_recipe_player import play_recipe
+from stage_1_1_orders import (
+    ItemMatch,
+    ORDER_TEMPLATES,
+    detect_order_bubbles,
+    match_conflicts,
+    save_debug,
+)
 from play import click, find_nte_window, focus_window, scale_point
 from monitor import (
     DEBUG_DIR as MONITOR_DEBUG_DIR,
@@ -27,15 +33,9 @@ ITEM_RECIPES = {
     6: "tomato_juice",
 }
 
-PREP_BATCH_SIZE = {
-    3: 3,
-    4: 3,
-    5: 6,
-}
-
-AMBIGUOUS_ITEMS = {4, 6}
-ORDER_CONFIRMATION_SCANS = 2
+ORDER_CONFIRMATION_SCANS = 1
 REVENUE_CONFIRMATION_SCANS = 2
+READY_OVERLAY_SECONDS = 5.2
 
 
 def runner_log(message: str) -> None:
@@ -43,9 +43,26 @@ def runner_log(message: str) -> None:
 
 
 def choose_match(matches: list[ItemMatch]) -> ItemMatch:
+    kept: list[ItemMatch] = []
+    for match in sorted(matches, key=lambda item: item.score, reverse=True):
+        conflict_index = next(
+            (
+                index
+                for index, existing in enumerate(kept)
+                if match_conflicts(match, existing, overlap_threshold=0.45)
+            ),
+            None,
+        )
+        if conflict_index is None:
+            kept.append(match)
+        elif match.score > kept[conflict_index].score:
+            kept[conflict_index] = match
+    if len(kept) != len(matches):
+        runner_log(f"ORDER_DEDUPED kept={len(kept)} dropped={len(matches) - len(kept)}")
+
     # Handle the leftmost visible order first. Overlapping template classes have
     # already been resolved in stage_1_1_orders.
-    return sorted(matches, key=lambda match: (match.x, match.y, -match.score))[0]
+    return sorted(kept, key=lambda match: (match.x, match.y, -match.score))[0]
 
 
 def same_visible_order(previous: ItemMatch | None, current: ItemMatch) -> bool:
@@ -66,6 +83,11 @@ def read_revenue(target: dict) -> int | None:
     MONITOR_DEBUG_DIR.mkdir(parents=True, exist_ok=True)
     cv2.imwrite(str(MONITOR_DEBUG_DIR / "latest_stage_1_1_revenue_region.png"), image)
     return read_revenue_value(image)
+
+
+def wait_for_ready_overlay() -> None:
+    runner_log("ORDER_READY_WAIT")
+    time.sleep(READY_OVERLAY_SECONDS)
 
 
 def exit_and_claim(target: dict, reason: str) -> int:
@@ -95,7 +117,6 @@ def run_stage_1_1(
     deadline = None if watch <= 0 else time.monotonic() + max(1.0, watch)
     handled = 0
     scans = 0
-    stock = {item_id: 0 for item_id in PREP_BATCH_SIZE}
     last_report = ""
     last_scan_log = 0.0
     last_revenue_log = 0.0
@@ -103,8 +124,18 @@ def run_stage_1_1(
     revenue_confirmations = 0
     pending_match: ItemMatch | None = None
     pending_count = 0
+    last_handled_match: ItemMatch | None = None
+    last_handled_until = 0.0
 
     runner_log(f"ORDER_RUNNER_STARTED revenue_goal={revenue_goal}")
+    wait_for_ready_overlay()
+    actions = StageOneOneActions()
+    runner_log("ORDER_STATIONS_PREPARING")
+    if not actions.prewarm():
+        runner_log("ORDER_STATIONS_FAILED")
+        return 9
+    runner_log("ORDER_STATIONS_READY")
+
     while deadline is None or time.monotonic() < deadline:
         target = find_nte_window()
         if not target:
@@ -140,6 +171,9 @@ def run_stage_1_1(
             templates=ORDER_TEMPLATES,
             multi=True,
         )
+        ORDER_DEBUG_DIR.mkdir(parents=True, exist_ok=True)
+        cv2.imwrite(str(ORDER_DEBUG_DIR / "latest_order_scan.png"), order_image)
+        save_debug(order_image, matches, ORDER_DEBUG_DIR / "latest_order_scan_marked.png")
         scans += 1
         if now - last_scan_log >= 2.0:
             runner_log(f"ORDER_SCANNING scans={scans} matches={len(matches)} handled={handled}")
@@ -170,39 +204,29 @@ def run_stage_1_1(
 
         match = choose_match(matches)
         item_id = match.item.item_id
-        if item_id in AMBIGUOUS_ITEMS:
-            if same_visible_order(pending_match, match):
-                pending_count += 1
-            else:
-                pending_match = match
-                pending_count = 1
+        if time.monotonic() < last_handled_until and same_visible_order(last_handled_match, match):
+            time.sleep(max(0.08, interval))
+            continue
 
-            if pending_count < ORDER_CONFIRMATION_SCANS:
-                runner_log(
-                    f"ORDER_CONFIRMING item={item_id} score={match.score:.3f} "
-                    f"scale={match.scale:.3f} count={pending_count}/{ORDER_CONFIRMATION_SCANS}"
-                )
-                time.sleep(max(0.08, interval))
-                continue
+        if same_visible_order(pending_match, match):
+            pending_count += 1
         else:
-            pending_match = None
-            pending_count = 0
+            pending_match = match
+            pending_count = 1
+
+        if pending_count < ORDER_CONFIRMATION_SCANS:
+            runner_log(
+                f"ORDER_CONFIRMING item={item_id} score={match.score:.3f} "
+                f"scale={match.scale:.3f} count={pending_count}/{ORDER_CONFIRMATION_SCANS}"
+            )
+            time.sleep(max(0.08, interval))
+            continue
 
         recipe = ITEM_RECIPES.get(item_id)
         if not recipe:
             runner_log(f"ORDER_SKIPPED item={item_id} reason=no_recipe")
             time.sleep(max(0.08, interval))
             continue
-
-        start_step_index = 0
-        if item_id in PREP_BATCH_SIZE:
-            if stock[item_id] > 0:
-                start_step_index = 1
-                stock[item_id] -= 1
-                runner_log(f"ORDER_BUFFER_USED item={item_id} remaining={stock[item_id]}")
-            else:
-                stock[item_id] = PREP_BATCH_SIZE[item_id] - 1
-                runner_log(f"ORDER_BUFFER_REFILLED item={item_id} remaining={stock[item_id]}")
 
         pending_match = None
         pending_count = 0
@@ -212,19 +236,14 @@ def run_stage_1_1(
             f"score={match.score:.3f} scale={match.scale:.3f} "
             f"x={match.x} y={match.y} order={handled}"
         )
-        result = play_recipe(
-            recipe,
-            None,
-            skip_open_shop=True,
-            start_step_index=start_step_index,
-            delay=0.18,
-        )
-        if result != 0:
-            runner_log(f"ORDER_FAILED item={item_id} code={result}")
-            return result
+        if not actions.serve(item_id):
+            runner_log(f"ORDER_FAILED item={item_id} code=9")
+            return 9
 
         runner_log(f"ORDER_DONE item={item_id} order={handled}")
-        time.sleep(max(0.1, cooldown))
+        last_handled_match = match
+        last_handled_until = time.monotonic() + max(1.0, cooldown * 3.0)
+        time.sleep(max(0.06, cooldown * 0.5))
 
     runner_log(f"ORDER_RUNNER_TIMEOUT handled={handled} revenue={last_revenue_value}")
     # Do not exit/claim on timeout: Stage 1-1 must only finish after revenue is
@@ -237,7 +256,7 @@ def main() -> int:
     parser.add_argument("--watch", type=float, default=0.0, help="0 means no timeout.")
     parser.add_argument("--interval", type=float, default=0.18)
     parser.add_argument("--threshold", type=float, default=0.82)
-    parser.add_argument("--cooldown", type=float, default=0.3)
+    parser.add_argument("--cooldown", type=float, default=0.18)
     parser.add_argument("--revenue-goal", type=int, default=100)
     args = parser.parse_args()
     return run_stage_1_1(args.watch, args.interval, args.threshold, args.cooldown, args.revenue_goal)

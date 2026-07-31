@@ -18,7 +18,7 @@ namespace CityStamina.Avalonia.ViewModels;
 
 public partial class MainViewModel : ViewModelBase
 {
-    public const string AppVersion = "1.2.4";
+    public const string AppVersion = "1.2.5";
     private const string LatestManifestUrl = "https://raw.githubusercontent.com/PHai237/City-Stamina-Spender/main/latest.json";
     private const string StageOneNine = "Stage 1-9";
     private const string StageOneOne = "Stage 1-1";
@@ -37,8 +37,6 @@ public partial class MainViewModel : ViewModelBase
     private readonly string _dataDir;
     private readonly string _ownerToolDir;
     private readonly string _ownerToolPath;
-    private readonly string _recipePlayerPath;
-    private readonly string _itemRunnerPath;
     private readonly string _ownerToolExePath;
     private readonly string _wrapperLogPath;
     private readonly bool _preferPythonSource;
@@ -59,8 +57,6 @@ public partial class MainViewModel : ViewModelBase
         (_rootDir, _dataDir) = FindApplicationDirectories();
         _ownerToolDir = Path.Combine(_dataDir, "owners_selection", "_tool");
         _ownerToolPath = Path.Combine(_ownerToolDir, "stage_1_9.py");
-        _recipePlayerPath = Path.Combine(_ownerToolDir, "stage_1_1_recipe_player.py");
-        _itemRunnerPath = Path.Combine(_ownerToolDir, "stage_1_1_item_runner.py");
         _ownerToolExePath = Path.Combine(_ownerToolDir, "OwnerSelectionTool.exe");
         _wrapperLogPath = Path.Combine(_ownerToolDir, "wrapper_debug", "run.log");
         _preferPythonSource = IsDevelopmentLayout(_dataDir);
@@ -92,6 +88,22 @@ public partial class MainViewModel : ViewModelBase
 
     [ObservableProperty]
     private string _elapsed = "00:00";
+
+    [ObservableProperty]
+    private string _ordersDetected = "0 / 0";
+
+    [ObservableProperty]
+    private string _ordersDone = "0";
+
+    [ObservableProperty]
+    private string _tuneImageUri = "";
+
+    [ObservableProperty]
+    private string _tuneSummary = "No tuning capture yet.";
+
+    [ObservableProperty]
+    [NotifyCanExecuteChangedFor(nameof(TuneStageOneOneCommand))]
+    private bool _isTuning;
 
     [ObservableProperty]
     private string _logText = "";
@@ -174,6 +186,8 @@ public partial class MainViewModel : ViewModelBase
         RefreshHubMetrics();
         _currentRunSpent = 0;
         SpentSoFar = FormatAmount(_sessionSpent);
+        OrdersDetected = "0 / 0";
+        OrdersDone = "0";
         StartElapsedTimer();
 
         try
@@ -209,16 +223,6 @@ public partial class MainViewModel : ViewModelBase
             }
 
             AppendLog($"Game found: {game.Value.Width}x{game.Value.Height} ({game.Value.Title})");
-
-            AppendLog("Checking Support Employee...");
-            if (!await PrepareSupportEmployeeAsync(SelectedStageArg))
-            {
-                if (!_stopRequested)
-                {
-                    AppendLog("Support Employee check failed.");
-                }
-                return;
-            }
 
             if (_stopRequested)
             {
@@ -280,75 +284,46 @@ public partial class MainViewModel : ViewModelBase
         AppendLog("Stopping...");
     }
 
-    [RelayCommand(CanExecute = nameof(CanRun))]
-    private async Task TestItemTwoAsync()
+    [RelayCommand(CanExecute = nameof(CanTuneStageOneOne))]
+    private async Task TuneStageOneOneAsync()
     {
-        _stopRequested = false;
-        IsRunning = true;
-        RefreshHubMetrics();
-        SetRunLog("Testing item 2 recipe...");
+        IsTuning = true;
+        TuneSummary = "Capturing Stage 1-1 order region...";
+        SetRunLog("Tuning Stage 1-1 detector...");
 
         try
         {
-            if (!File.Exists(_recipePlayerPath))
+            if (!OwnerToolExists())
             {
-                AppendLog("Recipe player was not found.");
+                AppendLog("Owner's Selection tool was not found.");
                 return;
             }
 
+            var command = ResolveOwnerCommand("--tune-stage-1-1");
             var exitCode = await RunProcessToLogAsync(
-                "python",
-                $"-u \"{_recipePlayerPath}\" white_coffee",
+                command.FileName,
+                command.Arguments,
                 _ownerToolDir,
                 logOutput: true
             );
 
-            AppendLog(exitCode == 0 ? "Item 2 test completed." : "Item 2 test stopped.");
-        }
-        catch (Exception ex)
-        {
-            AppendLog($"Item 2 test stopped. {ex.Message}");
-        }
-        finally
-        {
-            IsRunning = false;
-            RefreshHubMetrics();
-        }
-    }
-
-    [RelayCommand(CanExecute = nameof(CanRun))]
-    private async Task AutoItemOneAsync()
-    {
-        _stopRequested = false;
-        IsRunning = true;
-        RefreshHubMetrics();
-        SetRunLog("Auto item 1 running...");
-
-        try
-        {
-            if (!File.Exists(_itemRunnerPath))
+            if (exitCode == 0)
             {
-                AppendLog("Item runner was not found.");
-                return;
+                AppendLog("Tuning capture completed.");
             }
-
-            var exitCode = await RunProcessToLogAsync(
-                "python",
-                $"-u \"{_itemRunnerPath}\" 1 --watch 60 --interval 0.25 --threshold 0.82",
-                _ownerToolDir,
-                logOutput: true
-            );
-
-            AppendLog(exitCode == 0 ? "Auto item 1 completed." : "Auto item 1 stopped.");
+            else
+            {
+                AppendLog($"Tuning stopped with code {exitCode}.");
+            }
         }
         catch (Exception ex)
         {
-            AppendLog($"Auto item 1 stopped. {ex.Message}");
+            AppendLog("Tuning failed. " + ex.Message);
+            WriteWrapperDebug("wrapper", ex.ToString());
         }
         finally
         {
-            IsRunning = false;
-            RefreshHubMetrics();
+            IsTuning = false;
         }
     }
 
@@ -465,6 +440,8 @@ public partial class MainViewModel : ViewModelBase
 
     private bool CanStop() => IsRunning;
 
+    private bool CanTuneStageOneOne() => !IsRunning && !IsTuning;
+
     private bool CanChangeMode() => !IsRunning;
 
     private void OpenDetail()
@@ -549,17 +526,6 @@ public partial class MainViewModel : ViewModelBase
             $"Starting owner tool mode={(command.UsesPythonSource ? "source" : "packaged")} stage={stage} amount={amount}"
         );
         return StartProcess(command.FileName, command.Arguments, _ownerToolDir);
-    }
-
-    private async Task<bool> PrepareSupportEmployeeAsync(string stage)
-    {
-        var command = ResolveOwnerCommand($"--prepare-support-only --stage {stage}");
-        return await RunProcessToLogAsync(
-            command.FileName,
-            command.Arguments,
-            _ownerToolDir,
-            logOutput: true
-        ) == 0;
     }
 
     private async Task<int> RunProcessToLogAsync(
@@ -660,6 +626,8 @@ public partial class MainViewModel : ViewModelBase
     private void HandleAutomationLine(string line)
     {
         UpdateSpentFromLog(line);
+        UpdateOrderMetricsFromLog(line);
+        UpdateTuneFromLog(line);
 
         if (Regex.IsMatch(line, @"^Run\s+\d+:", RegexOptions.IgnoreCase))
         {
@@ -675,6 +643,7 @@ public partial class MainViewModel : ViewModelBase
         if (lineMatch.Success)
         {
             var message = lineMatch.Groups[1].Value.Trim();
+            UpdateOrderMetricsFromLog(message);
             if (!IsNoisyUiLog(message))
             {
                 AppendLog(message);
@@ -687,9 +656,38 @@ public partial class MainViewModel : ViewModelBase
             return;
         }
 
+        if (line.StartsWith("TUNE_", StringComparison.OrdinalIgnoreCase))
+        {
+            return;
+        }
+
         if (!IsNoisyUiLog(line))
         {
             AppendLog(line);
+        }
+    }
+
+    private void UpdateTuneFromLog(string line)
+    {
+        if (line.StartsWith("TUNE_IMAGE=", StringComparison.OrdinalIgnoreCase))
+        {
+            var path = line["TUNE_IMAGE=".Length..].Trim();
+            if (File.Exists(path))
+            {
+                TuneImageUri = new Uri(path).AbsoluteUri;
+            }
+            return;
+        }
+
+        if (line.StartsWith("TUNE_SUMMARY=", StringComparison.OrdinalIgnoreCase))
+        {
+            TuneSummary = line["TUNE_SUMMARY=".Length..].Trim();
+            return;
+        }
+
+        if (line.StartsWith("TUNE_MATCHES=", StringComparison.OrdinalIgnoreCase))
+        {
+            TuneSummary = "Detected " + line["TUNE_MATCHES=".Length..].Trim() + " visible order(s).";
         }
     }
 
@@ -725,6 +723,45 @@ public partial class MainViewModel : ViewModelBase
             _currentRunSpent = ParseAmount(match.Groups[1].Value);
             SpentSoFar = FormatAmount(_sessionSpent + _currentRunSpent);
             return;
+        }
+    }
+
+    private void UpdateOrderMetricsFromLog(string line)
+    {
+        var scanMatch = Regex.Match(
+            line,
+            @"Order scan:\s*(\d+)\s+NPC\s*/\s*(\d+)\s+orders",
+            RegexOptions.IgnoreCase
+        );
+        if (scanMatch.Success)
+        {
+            OrdersDetected = $"{scanMatch.Groups[1].Value} / {scanMatch.Groups[2].Value}";
+            return;
+        }
+
+        var directScanMatch = Regex.Match(
+            line,
+            @"^ORDER_SCANNING\b.*\bmatches=(\d+).*\bhandled=(\d+)",
+            RegexOptions.IgnoreCase
+        );
+        if (directScanMatch.Success)
+        {
+            OrdersDetected = $"{directScanMatch.Groups[1].Value} / {directScanMatch.Groups[1].Value}";
+            OrdersDone = directScanMatch.Groups[2].Value;
+            return;
+        }
+
+        var doneMatch = Regex.Match(line, @"Order\s+(\d+)\s+served", RegexOptions.IgnoreCase);
+        if (doneMatch.Success)
+        {
+            OrdersDone = doneMatch.Groups[1].Value;
+            return;
+        }
+
+        var directDoneMatch = Regex.Match(line, @"^ORDER_DONE\b.*\border=(\d+)", RegexOptions.IgnoreCase);
+        if (directDoneMatch.Success)
+        {
+            OrdersDone = directDoneMatch.Groups[1].Value;
         }
     }
 

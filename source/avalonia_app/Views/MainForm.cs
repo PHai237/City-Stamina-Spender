@@ -112,11 +112,8 @@ public sealed class MainForm : Form
             case "stop":
                 ExecuteIfPossible(_viewModel.StopCommand);
                 break;
-            case "testItem2":
-                ExecuteIfPossible(_viewModel.TestItemTwoCommand);
-                break;
-            case "autoItem1":
-                ExecuteIfPossible(_viewModel.AutoItemOneCommand);
+            case "tuneStageOneOne":
+                ExecuteIfPossible(_viewModel.TuneStageOneOneCommand);
                 break;
         }
     }
@@ -144,6 +141,11 @@ public sealed class MainForm : Form
             targetStamina = _viewModel.TargetStamina,
             spentSoFar = _viewModel.SpentSoFar,
             elapsed = _viewModel.Elapsed,
+            ordersDetected = _viewModel.OrdersDetected,
+            ordersDone = _viewModel.OrdersDone,
+            tuneImageUri = _viewModel.TuneImageUri,
+            tuneSummary = _viewModel.TuneSummary,
+            isTuning = _viewModel.IsTuning,
             logText = _viewModel.LogText,
             searchQuery = _viewModel.SearchQuery,
             automationCount = _viewModel.AutomationCount,

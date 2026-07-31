@@ -7,6 +7,11 @@ const state = {
   targetStamina: "",
   spentSoFar: "--",
   elapsed: "00:00",
+  ordersDetected: "0 / 0",
+  ordersDone: "0",
+  tuneImageUri: "",
+  tuneSummary: "No tuning capture yet.",
+  isTuning: false,
   logText: "",
   searchQuery: "",
   automationCount: "1",
@@ -195,6 +200,13 @@ function detailHeader() {
   `;
 }
 function controlCards() {
+  const isStageOneOne = state.selectedStage === "Stage 1-1";
+  const secondMetric = isStageOneOne
+    ? { label: "Visible orders", value: state.ordersDetected, note: "NPC / orders" }
+    : { label: "Spent so far", value: state.spentSoFar, note: "City Stamina" };
+  const thirdMetric = isStageOneOne
+    ? { label: "Orders done", value: state.ordersDone, note: "served" }
+    : { label: "Elapsed", value: state.elapsed, note: "mm:ss" };
   return `
     <div class="detail-controls">
       <div class="control-card">
@@ -204,15 +216,15 @@ function controlCards() {
       </div>
 
       <div class="control-card">
-        <div class="control-label">Spent so far</div>
-        <div class="big-value">${escapeHtml(state.spentSoFar)}</div>
-        <div class="metric-note">City Stamina</div>
+        <div class="control-label">${escapeHtml(secondMetric.label)}</div>
+        <div class="big-value">${escapeHtml(secondMetric.value)}</div>
+        <div class="metric-note">${escapeHtml(secondMetric.note)}</div>
       </div>
 
       <div class="control-card">
-        <div class="control-label">Elapsed</div>
-        <div class="big-value time-value">${escapeHtml(state.elapsed)}</div>
-        <div class="metric-note">mm:ss</div>
+        <div class="control-label">${escapeHtml(thirdMetric.label)}</div>
+        <div class="big-value time-value">${escapeHtml(thirdMetric.value)}</div>
+        <div class="metric-note">${escapeHtml(thirdMetric.note)}</div>
       </div>
 
       <div class="control-card action-card">
@@ -235,6 +247,7 @@ function classifyLog(line) {
 }
 
 function logPanel() {
+  const isStageOneOne = state.selectedStage === "Stage 1-1";
   const lines = String(state.logText || "")
     .split(/\r?\n/)
     .map((line) => line.trimEnd())
@@ -251,13 +264,35 @@ function logPanel() {
     : '<span class="empty-log">Waiting for run...</span>';
 
   return `
-    <div class="log-area">
+    <div class="log-area ${isStageOneOne ? "with-corner-tools" : ""}">
       <div class="log-head">
         <span>Log</span>
         <div class="divider"></div>
         ${state.isRunning ? '<span class="running-indicator"><span class="dot"></span>Running</span>' : ""}
       </div>
-      <div id="logBox" class="log-box">${body}</div>
+      <div class="log-wrap">
+        <div id="logBox" class="log-box">${body}</div>
+        ${isStageOneOne ? cornerTools() : ""}
+      </div>
+    </div>
+  `;
+}
+
+function cornerTools() {
+  const image = state.tuneImageUri
+    ? `<img class="corner-preview-img" src="${escapeHtml(state.tuneImageUri)}" alt="Stage 1-1 tuning preview" />`
+    : `<div class="corner-preview-empty">No preview</div>`;
+  return `
+    <div class="log-corner-panel">
+      <div class="corner-panel-head">
+        <span>Detector</span>
+        <span class="mono">${state.isTuning ? "capturing" : "ready"}</span>
+      </div>
+      <div class="corner-preview">${image}</div>
+      <div class="corner-summary">${escapeHtml(state.tuneSummary)}</div>
+      <div class="corner-actions">
+        <button id="tuneButton" class="test-action tune-action" ${state.isRunning || state.isTuning ? "disabled" : ""}>Tune</button>
+      </div>
     </div>
   `;
 }
@@ -331,6 +366,9 @@ function bindEvents() {
 
   const stopButton = document.getElementById("stopButton");
   if (stopButton) stopButton.addEventListener("click", () => post({ type: "stop" }));
+
+  const tuneButton = document.getElementById("tuneButton");
+  if (tuneButton) tuneButton.addEventListener("click", () => post({ type: "tuneStageOneOne" }));
 
 }
 

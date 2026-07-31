@@ -24,8 +24,8 @@ from play import (
     is_owner_selection_screen,
     log,
     find_template_multiscale,
-    prepare_support_employees,
 )
+from stage_1_1_tuner import run_tune
 
 
 OWNER_TEMPLATE = cv2.imread(
@@ -137,9 +137,9 @@ def run_cycle(
     spent = None
     opened_shop = False
     reached_exit = False
-    support_employee_emitted = False
     revenue_milestones: set[int] = set()
     stage_1_1_revenue_bucket = -1
+    last_stage_1_1_scan: tuple[int, int] | None = None
     line_number = first_line
 
     def emit(message: str) -> None:
@@ -153,15 +153,6 @@ def run_cycle(
             log(f"child stdout: {stripped}")
         if not compact:
             print(line, end="")
-        elif (
-            "Support Employee checked" in line
-            and not support_employee_emitted
-            and not stripped.lstrip().startswith("Line ")
-        ):
-            support_employee_emitted = True
-            emit(stripped)
-        elif "Support Employee is missing" in line:
-            emit(stripped)
         elif "Da bam Open Shop." in line and not opened_shop:
             opened_shop = True
             emit(f"{stage_label.capitalize()} found, clicked Open Shop.")
@@ -171,6 +162,24 @@ def run_cycle(
                 emit("Revenue is updating.")
         elif stage == "1-1" and stripped.startswith("ORDER_RUNNER_STARTED"):
             emit("Order handling started.")
+        elif stage == "1-1" and stripped.startswith("ORDER_SCANNING "):
+            parts = dict(
+                part.split("=", 1)
+                for part in stripped.split()[1:]
+                if "=" in part
+            )
+            try:
+                matches = int(parts.get("matches", "0"))
+                handled = int(parts.get("handled", "0"))
+            except ValueError:
+                matches = 0
+                handled = 0
+            scan_state = (matches, handled)
+            if scan_state != last_stage_1_1_scan:
+                last_stage_1_1_scan = scan_state
+                emit(f"Order scan: {matches} NPC / {matches} orders.")
+        elif stage == "1-1" and stripped.startswith("ORDER_DETECTED "):
+            emit("Order detected.")
         elif stage == "1-1" and stripped.startswith("ORDER_REVENUE "):
             parts = dict(
                 part.split("=", 1)
@@ -360,18 +369,13 @@ def main() -> int:
     parser.add_argument("--between-cycles", type=float, default=3.0)
     parser.add_argument("--owner-timeout", type=float, default=20.0)
     parser.add_argument("--stage", choices=["1-9", "1-1"], default="1-9")
-    parser.add_argument("--prepare-support-only", action="store_true", help=argparse.SUPPRESS)
     parser.add_argument("--skip-support-employee-check", action="store_true", help=argparse.SUPPRESS)
+    parser.add_argument("--tune-stage-1-1", action="store_true", help=argparse.SUPPRESS)
     parser.add_argument("--elevated-child", action="store_true", help=argparse.SUPPRESS)
     args = parser.parse_args()
 
-    if args.prepare_support_only:
-        status_path = WORKSPACE / "support_test_status.txt"
-        with status_path.open("a", encoding="utf-8") as status_file:
-            status_file.write(
-                f"{time.strftime('%Y-%m-%d %H:%M:%S')} "
-                f"start elevated={is_admin()} argv={sys.argv!r}\n"
-            )
+    if args.tune_stage_1_1:
+        return run_tune(save=True)
 
     spend_target = args.spend_option if args.spend_option is not None else args.spend
     if spend_target is not None and spend_target <= 0:
@@ -392,18 +396,6 @@ def main() -> int:
         log("Loop requesting Administrator")
         return 0 if relaunch_as_admin() else 4
 
-    if args.prepare_support_only:
-        target = find_nte_window()
-        with (WORKSPACE / "support_test_status.txt").open("a", encoding="utf-8") as status_file:
-            status_file.write(f"{time.strftime('%Y-%m-%d %H:%M:%S')} target={target!r}\n")
-        if not target:
-            print("NTE window was not found.")
-            return 2
-        ok = prepare_support_employees(target, args.stage)
-        with (WORKSPACE / "support_test_status.txt").open("a", encoding="utf-8") as status_file:
-            status_file.write(f"{time.strftime('%Y-%m-%d %H:%M:%S')} result={ok}\n")
-        return 0 if ok else 7
-
     if spend_target is not None:
         log(
             "Loop spend target "
@@ -414,6 +406,7 @@ def main() -> int:
     cycle = 0
     stopped_by_energy = False
     compact_output = spend_target is not None
+    support_employee_checked = args.skip_support_employee_check
     while True:
         if spend_target is not None and spent_total >= spend_target:
             break
@@ -452,12 +445,13 @@ def main() -> int:
             compact_output,
             next_line,
             args.stage,
-            args.skip_support_employee_check,
+            support_employee_checked,
         )
         if result != 0:
             print(f"  Line {next_line}: Stopped.")
             log(f"Loop cycle {cycle} stopped with return code {result}")
             return result
+        support_employee_checked = True
         if spend_target is not None:
             if spent is None:
                 spent = args.min_spend_per_cycle
