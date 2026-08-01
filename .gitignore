@@ -27,6 +27,7 @@ __pycache__/
 
 # Release archives generated locally
 *.zip
+release_update_*/
 
 # Local calibration screenshots
 stage_1_1_calibration/
