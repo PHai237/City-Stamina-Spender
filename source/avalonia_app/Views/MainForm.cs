@@ -112,9 +112,6 @@ public sealed class MainForm : Form
             case "stop":
                 ExecuteIfPossible(_viewModel.StopCommand);
                 break;
-            case "tuneStageOneOne":
-                ExecuteIfPossible(_viewModel.TuneStageOneOneCommand);
-                break;
         }
     }
 
@@ -143,9 +140,6 @@ public sealed class MainForm : Form
             elapsed = _viewModel.Elapsed,
             ordersDetected = _viewModel.OrdersDetected,
             ordersDone = _viewModel.OrdersDone,
-            tuneImageUri = _viewModel.TuneImageUri,
-            tuneSummary = _viewModel.TuneSummary,
-            isTuning = _viewModel.IsTuning,
             logText = _viewModel.LogText,
             searchQuery = _viewModel.SearchQuery,
             automationCount = _viewModel.AutomationCount,

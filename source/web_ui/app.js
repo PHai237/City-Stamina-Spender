@@ -9,9 +9,6 @@ const state = {
   elapsed: "00:00",
   ordersDetected: "0 / 0",
   ordersDone: "0",
-  tuneImageUri: "",
-  tuneSummary: "No tuning capture yet.",
-  isTuning: false,
   logText: "",
   searchQuery: "",
   automationCount: "1",
@@ -23,8 +20,8 @@ const state = {
   isDetailVisible: false,
   isRunning: false,
   stageDropdownOpen: false,
-  currentVersion: "1.2.4",
-  latestVersion: "1.2.4",
+  currentVersion: "1.2.6",
+  latestVersion: "1.2.6",
   updateState: "checking",
   updateMessage: "Checking for updates...",
   isUpdateAvailable: false,
@@ -118,7 +115,7 @@ function statusbar() {
   const dotColor = state.isRunning ? "var(--warning)" : "var(--primary)";
   return `
     <div class="statusbar">
-      <span class="mono">v1.2.3 - engine online</span>
+      <span class="mono">v${escapeHtml(state.currentVersion)} - engine online</span>
       <span class="inline mono"><span class="dot" style="color:${dotColor}"></span>${statusText}</span>
     </div>
   `;
@@ -247,7 +244,6 @@ function classifyLog(line) {
 }
 
 function logPanel() {
-  const isStageOneOne = state.selectedStage === "Stage 1-1";
   const lines = String(state.logText || "")
     .split(/\r?\n/)
     .map((line) => line.trimEnd())
@@ -264,7 +260,7 @@ function logPanel() {
     : '<span class="empty-log">Waiting for run...</span>';
 
   return `
-    <div class="log-area ${isStageOneOne ? "with-corner-tools" : ""}">
+    <div class="log-area">
       <div class="log-head">
         <span>Log</span>
         <div class="divider"></div>
@@ -272,26 +268,6 @@ function logPanel() {
       </div>
       <div class="log-wrap">
         <div id="logBox" class="log-box">${body}</div>
-        ${isStageOneOne ? cornerTools() : ""}
-      </div>
-    </div>
-  `;
-}
-
-function cornerTools() {
-  const image = state.tuneImageUri
-    ? `<img class="corner-preview-img" src="${escapeHtml(state.tuneImageUri)}" alt="Stage 1-1 tuning preview" />`
-    : `<div class="corner-preview-empty">No preview</div>`;
-  return `
-    <div class="log-corner-panel">
-      <div class="corner-panel-head">
-        <span>Detector</span>
-        <span class="mono">${state.isTuning ? "capturing" : "ready"}</span>
-      </div>
-      <div class="corner-preview">${image}</div>
-      <div class="corner-summary">${escapeHtml(state.tuneSummary)}</div>
-      <div class="corner-actions">
-        <button id="tuneButton" class="test-action tune-action" ${state.isRunning || state.isTuning ? "disabled" : ""}>Tune</button>
       </div>
     </div>
   `;
@@ -366,9 +342,6 @@ function bindEvents() {
 
   const stopButton = document.getElementById("stopButton");
   if (stopButton) stopButton.addEventListener("click", () => post({ type: "stop" }));
-
-  const tuneButton = document.getElementById("tuneButton");
-  if (tuneButton) tuneButton.addEventListener("click", () => post({ type: "tuneStageOneOne" }));
 
 }
 

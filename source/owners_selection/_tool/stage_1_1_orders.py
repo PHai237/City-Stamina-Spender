@@ -103,7 +103,7 @@ ORDER_TEMPLATES = [
     ItemTemplate(1, "black_coffee", "Black coffee", ORDER_ASSET_DIR / "01_black_coffee_order_icon.png", 0.72),
     ItemTemplate(2, "white_coffee", "White coffee", ORDER_ASSET_DIR / "02_white_coffee_order_icon.png", 0.70),
     ItemTemplate(3, "sandwich", "Sandwich", ORDER_ASSET_DIR / "03_sandwich_order_icon.png"),
-    ItemTemplate(4, "croissant", "Croissant", ORDER_ASSET_DIR / "04_croissant_order_icon.png", 0.84),
+    ItemTemplate(4, "croissant", "Croissant", ORDER_ASSET_DIR / "04_croissant_order_icon.png", 0.90),
     ItemTemplate(5, "cupcake", "Cupcake", ORDER_ASSET_DIR / "05_cupcake_order_icon.png"),
     ItemTemplate(6, "tomato_juice", "Tomato juice", ORDER_ASSET_DIR / "06_tomato_juice_order_icon.png", 0.80, 0.03),
     ItemTemplate(6, "tomato_juice_bubble", "Tomato juice", ORDER_ASSET_DIR / "06_tomato_juice_order.png", 0.72, 0.08),
@@ -261,7 +261,13 @@ def classify_order_circle(
             continue
 
         base_threshold = effective_threshold(item, threshold)
-        circle_threshold = max(0.62, base_threshold - 0.12)
+        if item.item_id == 4:
+            # Croissant is visually close to several NPC/clothing highlights.
+            # Do not relax it inside the order-circle pass, otherwise tomato
+            # bubbles can produce false croissant orders below the bubble.
+            circle_threshold = base_threshold
+        else:
+            circle_threshold = max(0.62, base_threshold - 0.10)
         if item.key.endswith("_bubble"):
             scale_base = max(0.45, (radius * 2) / max(template.shape[0], template.shape[1]))
         else:
@@ -277,6 +283,14 @@ def classify_order_circle(
         )
         if not matches:
             continue
+        matches = [
+            match
+            for match in matches
+            if item.key.endswith("_bubble")
+            or icon_match_is_inside_circle(match, left, top, center_x, center_y, radius)
+        ]
+        if not matches:
+            continue
         candidate = max(matches, key=rank_match)
         candidate = ItemMatch(
             candidate.item,
@@ -290,6 +304,24 @@ def classify_order_circle(
         if best is None or better_match(candidate, best):
             best = candidate
     return best
+
+
+def icon_match_is_inside_circle(
+    match: ItemMatch,
+    crop_left: int,
+    crop_top: int,
+    circle_x: int,
+    circle_y: int,
+    radius: int,
+) -> bool:
+    match_center_x = crop_left + match.x + match.width / 2
+    match_center_y = crop_top + match.y + match.height / 2
+    dx = abs(match_center_x - circle_x)
+    dy = abs(match_center_y - circle_y)
+
+    # The visible item icon sits near the center of the circular order bubble.
+    # Matches lower than the bubble are usually NPC clothing/animation effects.
+    return dx <= radius * 0.78 and dy <= radius * 0.72
 
 
 def detect_order_circles(

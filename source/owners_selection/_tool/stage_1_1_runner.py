@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import argparse
 import time
+from typing import Any
 
 import cv2
 
@@ -14,6 +15,7 @@ from stage_1_1_orders import (
     match_conflicts,
     save_debug,
 )
+from stage_1_1_samples import SampleRing
 from play import click, find_nte_window, focus_window, scale_point
 from monitor import (
     DEBUG_DIR as MONITOR_DEBUG_DIR,
@@ -34,8 +36,8 @@ ITEM_RECIPES = {
 }
 
 ORDER_CONFIRMATION_SCANS = 1
-REVENUE_CONFIRMATION_SCANS = 2
 READY_OVERLAY_SECONDS = 5.2
+TOMATO_JUICE_ITEM_ID = 6
 
 
 def runner_log(message: str) -> None:
@@ -85,9 +87,97 @@ def read_revenue(target: dict) -> int | None:
     return read_revenue_value(image)
 
 
+def should_exit_after_order(
+    target: dict,
+    handled: int,
+    tomato_juice_served: int,
+    revenue_goal: int,
+) -> tuple[bool, int | None, str]:
+    if tomato_juice_served >= 2:
+        runner_log(f"ORDER_EXIT_RULE tomato_juice={tomato_juice_served} handled={handled}")
+        return True, None, "2 tomato juice orders"
+    if handled < 3:
+        return False, None, ""
+
+    revenue_value = read_revenue(target)
+    if revenue_value is None:
+        runner_log(f"ORDER_REVENUE_UNREADABLE order={handled} goal={revenue_goal}")
+        return True, None, "3 orders served"
+    runner_log(f"ORDER_REVENUE value={revenue_value} goal={revenue_goal}")
+    if revenue_value >= revenue_goal:
+        return True, revenue_value, f"revenue {revenue_value}/{revenue_goal}"
+    return False, revenue_value, ""
+
+
 def wait_for_ready_overlay() -> None:
     runner_log("ORDER_READY_WAIT")
     time.sleep(READY_OVERLAY_SECONDS)
+
+
+def capture_orders(
+    target: dict,
+    threshold: float,
+) -> tuple[Any, list[ItemMatch]]:
+    return detect_order_bubbles(
+        target["client"],
+        threshold=threshold,
+        templates=ORDER_TEMPLATES,
+        multi=True,
+    )
+
+
+def save_order_scan(
+    order_image,
+    matches: list[ItemMatch],
+    samples: SampleRing,
+    scans: int,
+    handled: int,
+) -> None:
+    ORDER_DEBUG_DIR.mkdir(parents=True, exist_ok=True)
+    cv2.imwrite(str(ORDER_DEBUG_DIR / "latest_order_scan.png"), order_image)
+    save_debug(order_image, matches, ORDER_DEBUG_DIR / "latest_order_scan_marked.png")
+    samples.save(scans, order_image, matches, handled)
+
+
+def prewarm_until_order(
+    actions: StageOneOneActions,
+    target: dict,
+    threshold: float,
+    samples: SampleRing,
+) -> tuple[bool, int, Any | None, list[ItemMatch]]:
+    if not actions.refresh_target():
+        return False, 0, None, []
+    refreshed = find_nte_window()
+    if not refreshed:
+        return False, 0, None, []
+    target.update(refreshed)
+
+    steps = (
+        ("sandwich", lambda: True if actions.sandwich_stock > 0 else actions.refill_sandwich()),
+        ("cupcake", lambda: True if actions.cupcake_stock > 0 or actions.cupcake_ready else actions.refill_cupcake()),
+        ("croissant", lambda: True if actions.croissant_stock > 0 else actions.refill_croissant()),
+        ("cupcake_ready", lambda: True if actions.cupcake_ready else actions.prime_cupcake()),
+    )
+    scans = 0
+    for name, step in steps:
+        runner_log(f"ORDER_STATION_PREP name={name}")
+        if not step():
+            return False, scans, None, []
+        refreshed = find_nte_window() or target
+        target.update(refreshed)
+        order_image, matches = capture_orders(target, threshold)
+        scans += 1
+        save_order_scan(order_image, matches, samples, scans, 0)
+        if matches:
+            runner_log(f"ORDER_STATION_PREP_INTERRUPTED name={name} matches={len(matches)}")
+            return True, scans, order_image, matches
+    return True, scans, None, []
+
+
+def stations_are_ready(actions: StageOneOneActions) -> bool:
+    return actions.sandwich_stock > 0 and actions.croissant_stock > 0 and (
+        actions.cupcake_ready or actions.cupcake_stock > 0
+    )
 
 
 def exit_and_claim(target: dict, reason: str) -> int:
@@ -119,22 +209,36 @@ def run_stage_1_1(
     scans = 0
     last_report = ""
     last_scan_log = 0.0
-    last_revenue_log = 0.0
     last_revenue_value: int | None = None
-    revenue_confirmations = 0
+    tomato_juice_served = 0
     pending_match: ItemMatch | None = None
     pending_count = 0
     last_handled_match: ItemMatch | None = None
     last_handled_until = 0.0
+    samples = SampleRing()
+    queued_order_image: Any | None = None
+    queued_matches: list[ItemMatch] = []
+    stations_ready = False
 
     runner_log(f"ORDER_RUNNER_STARTED revenue_goal={revenue_goal}")
     wait_for_ready_overlay()
     actions = StageOneOneActions()
     runner_log("ORDER_STATIONS_PREPARING")
-    if not actions.prewarm():
+    prepared, prep_scans, queued_order_image, queued_matches = prewarm_until_order(
+        actions,
+        find_nte_window() or {},
+        threshold,
+        samples,
+    )
+    scans += prep_scans
+    if not prepared:
         runner_log("ORDER_STATIONS_FAILED")
         return 9
-    runner_log("ORDER_STATIONS_READY")
+    if queued_matches:
+        runner_log("ORDER_STATIONS_PAUSED_FOR_ORDER")
+    else:
+        stations_ready = stations_are_ready(actions)
+        runner_log("ORDER_STATIONS_READY")
 
     while deadline is None or time.monotonic() < deadline:
         target = find_nte_window()
@@ -144,37 +248,17 @@ def run_stage_1_1(
         focus_window(target["hwnd"], 0.05)
         target = find_nte_window() or target
 
-        revenue_value = read_revenue(target)
         now = time.monotonic()
-        if revenue_value is not None and (
-            revenue_value != last_revenue_value or now - last_revenue_log >= 2.0
-        ):
-            runner_log(f"ORDER_REVENUE value={revenue_value} goal={revenue_goal}")
-            last_revenue_value = revenue_value
-            last_revenue_log = now
 
-        if revenue_value is not None and revenue_value >= revenue_goal:
-            revenue_confirmations += 1
-            runner_log(
-                f"ORDER_REVENUE_CONFIRMING value={revenue_value} "
-                f"count={revenue_confirmations}/{REVENUE_CONFIRMATION_SCANS}"
-            )
-            if revenue_confirmations >= REVENUE_CONFIRMATION_SCANS:
-                return exit_and_claim(target, f"revenue {revenue_value}/{revenue_goal}")
-            time.sleep(max(0.10, interval))
-            continue
-        revenue_confirmations = 0
-
-        order_image, matches = detect_order_bubbles(
-            target["client"],
-            threshold=threshold,
-            templates=ORDER_TEMPLATES,
-            multi=True,
-        )
-        ORDER_DEBUG_DIR.mkdir(parents=True, exist_ok=True)
-        cv2.imwrite(str(ORDER_DEBUG_DIR / "latest_order_scan.png"), order_image)
-        save_debug(order_image, matches, ORDER_DEBUG_DIR / "latest_order_scan_marked.png")
-        scans += 1
+        if queued_matches:
+            order_image = queued_order_image
+            matches = queued_matches
+            queued_order_image = None
+            queued_matches = []
+        else:
+            order_image, matches = capture_orders(target, threshold)
+            scans += 1
+            save_order_scan(order_image, matches, samples, scans, handled)
         if now - last_scan_log >= 2.0:
             runner_log(f"ORDER_SCANNING scans={scans} matches={len(matches)} handled={handled}")
             last_scan_log = now
@@ -182,6 +266,22 @@ def run_stage_1_1(
         if not matches:
             pending_match = None
             pending_count = 0
+            if not stations_ready:
+                prepared, prep_scans, queued_order_image, queued_matches = prewarm_until_order(
+                    actions,
+                    target,
+                    threshold,
+                    samples,
+                )
+                scans += prep_scans
+                if not prepared:
+                    runner_log("ORDER_STATIONS_FAILED")
+                    return 9
+                stations_ready = stations_are_ready(actions) and not queued_matches
+                if queued_matches:
+                    runner_log("ORDER_STATIONS_PAUSED_FOR_ORDER")
+                    continue
+                runner_log("ORDER_STATIONS_READY")
             time.sleep(max(0.08, interval))
             continue
 
@@ -195,11 +295,12 @@ def run_stage_1_1(
                 for match in matches[:6]
             )
             runner_log(f"ORDER_DETECTED {summary}")
-            save_debug(
-                image=order_image,
-                matches=matches,
-                output_path=ORDER_DEBUG_DIR / f"runner_{time.strftime('%Y%m%d_%H%M%S')}_{scans:04d}.png",
-            )
+            if order_image is not None:
+                save_debug(
+                    image=order_image,
+                    matches=matches,
+                    output_path=ORDER_DEBUG_DIR / f"runner_{time.strftime('%Y%m%d_%H%M%S')}_{scans:04d}.png",
+                )
             last_report = report
 
         match = choose_match(matches)
@@ -240,7 +341,36 @@ def run_stage_1_1(
             runner_log(f"ORDER_FAILED item={item_id} code=9")
             return 9
 
+        stations_ready = stations_are_ready(actions)
+        if item_id == TOMATO_JUICE_ITEM_ID:
+            tomato_juice_served += 1
         runner_log(f"ORDER_DONE item={item_id} order={handled}")
+        should_exit, revenue_value, exit_reason = should_exit_after_order(
+            target,
+            handled,
+            tomato_juice_served,
+            revenue_goal,
+        )
+        if revenue_value is not None:
+            last_revenue_value = revenue_value
+        if should_exit:
+            return exit_and_claim(target, exit_reason)
+        if not stations_ready:
+            prepared, prep_scans, queued_order_image, queued_matches = prewarm_until_order(
+                actions,
+                target,
+                threshold,
+                samples,
+            )
+            scans += prep_scans
+            if not prepared:
+                runner_log("ORDER_STATIONS_FAILED")
+                return 9
+            stations_ready = stations_are_ready(actions) and not queued_matches
+            if queued_matches:
+                runner_log("ORDER_STATIONS_PAUSED_FOR_ORDER")
+            else:
+                runner_log("ORDER_STATIONS_READY")
         last_handled_match = match
         last_handled_until = time.monotonic() + max(1.0, cooldown * 3.0)
         time.sleep(max(0.06, cooldown * 0.5))

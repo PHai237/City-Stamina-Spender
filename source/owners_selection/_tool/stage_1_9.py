@@ -80,7 +80,7 @@ def wait_for_owner_selection(timeout: float) -> bool:
     while time.monotonic() < deadline:
         target = find_nte_window()
         if target:
-            focus_window(target["hwnd"], 0.3)
+            focus_window(target["hwnd"], 0.08)
             target = find_nte_window()
             if not target:
                 human_sleep(0.4, 0.35)
@@ -458,6 +458,11 @@ def main() -> int:
                 print(f"  Line {next_line}: Could not read City Stamina spent, using fallback {spent}.")
                 next_line += 1
                 log(f"Loop cycle {cycle} missing spent marker; fallback spent={spent}")
+            if spent <= 0:
+                print(f"  Line {next_line}: City Stamina was not spent, stopping.")
+                log(f"Loop stopped because spent marker was {spent}")
+                stopped_by_energy = True
+                break
             spent_total += spent
             print(
                 f"  Line {next_line}: Spent {spent} City Stamina. "

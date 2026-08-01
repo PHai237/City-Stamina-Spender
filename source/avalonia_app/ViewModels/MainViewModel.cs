@@ -18,7 +18,7 @@ namespace CityStamina.Avalonia.ViewModels;
 
 public partial class MainViewModel : ViewModelBase
 {
-    public const string AppVersion = "1.2.5";
+    public const string AppVersion = "1.2.6";
     private const string LatestManifestUrl = "https://raw.githubusercontent.com/PHai237/City-Stamina-Spender/main/latest.json";
     private const string StageOneNine = "Stage 1-9";
     private const string StageOneOne = "Stage 1-1";
@@ -94,16 +94,6 @@ public partial class MainViewModel : ViewModelBase
 
     [ObservableProperty]
     private string _ordersDone = "0";
-
-    [ObservableProperty]
-    private string _tuneImageUri = "";
-
-    [ObservableProperty]
-    private string _tuneSummary = "No tuning capture yet.";
-
-    [ObservableProperty]
-    [NotifyCanExecuteChangedFor(nameof(TuneStageOneOneCommand))]
-    private bool _isTuning;
 
     [ObservableProperty]
     private string _logText = "";
@@ -284,49 +274,6 @@ public partial class MainViewModel : ViewModelBase
         AppendLog("Stopping...");
     }
 
-    [RelayCommand(CanExecute = nameof(CanTuneStageOneOne))]
-    private async Task TuneStageOneOneAsync()
-    {
-        IsTuning = true;
-        TuneSummary = "Capturing Stage 1-1 order region...";
-        SetRunLog("Tuning Stage 1-1 detector...");
-
-        try
-        {
-            if (!OwnerToolExists())
-            {
-                AppendLog("Owner's Selection tool was not found.");
-                return;
-            }
-
-            var command = ResolveOwnerCommand("--tune-stage-1-1");
-            var exitCode = await RunProcessToLogAsync(
-                command.FileName,
-                command.Arguments,
-                _ownerToolDir,
-                logOutput: true
-            );
-
-            if (exitCode == 0)
-            {
-                AppendLog("Tuning capture completed.");
-            }
-            else
-            {
-                AppendLog($"Tuning stopped with code {exitCode}.");
-            }
-        }
-        catch (Exception ex)
-        {
-            AppendLog("Tuning failed. " + ex.Message);
-            WriteWrapperDebug("wrapper", ex.ToString());
-        }
-        finally
-        {
-            IsTuning = false;
-        }
-    }
-
     [RelayCommand]
     private async Task CheckUpdateAsync()
     {
@@ -440,8 +387,6 @@ public partial class MainViewModel : ViewModelBase
 
     private bool CanStop() => IsRunning;
 
-    private bool CanTuneStageOneOne() => !IsRunning && !IsTuning;
-
     private bool CanChangeMode() => !IsRunning;
 
     private void OpenDetail()
@@ -515,6 +460,10 @@ public partial class MainViewModel : ViewModelBase
     private Process StartOwnerProcess(int amount, string stage, bool skipSupportEmployeeCheck)
     {
         var arguments = amount.ToString(CultureInfo.InvariantCulture) + $" --stage {stage}";
+        if (stage == "1-1")
+        {
+            arguments += " --owner-timeout 6 --verify-timeout 2.5 --between-cycles 1";
+        }
         if (skipSupportEmployeeCheck)
         {
             arguments += " --skip-support-employee-check";
@@ -627,7 +576,6 @@ public partial class MainViewModel : ViewModelBase
     {
         UpdateSpentFromLog(line);
         UpdateOrderMetricsFromLog(line);
-        UpdateTuneFromLog(line);
 
         if (Regex.IsMatch(line, @"^Run\s+\d+:", RegexOptions.IgnoreCase))
         {
@@ -664,30 +612,6 @@ public partial class MainViewModel : ViewModelBase
         if (!IsNoisyUiLog(line))
         {
             AppendLog(line);
-        }
-    }
-
-    private void UpdateTuneFromLog(string line)
-    {
-        if (line.StartsWith("TUNE_IMAGE=", StringComparison.OrdinalIgnoreCase))
-        {
-            var path = line["TUNE_IMAGE=".Length..].Trim();
-            if (File.Exists(path))
-            {
-                TuneImageUri = new Uri(path).AbsoluteUri;
-            }
-            return;
-        }
-
-        if (line.StartsWith("TUNE_SUMMARY=", StringComparison.OrdinalIgnoreCase))
-        {
-            TuneSummary = line["TUNE_SUMMARY=".Length..].Trim();
-            return;
-        }
-
-        if (line.StartsWith("TUNE_MATCHES=", StringComparison.OrdinalIgnoreCase))
-        {
-            TuneSummary = "Detected " + line["TUNE_MATCHES=".Length..].Trim() + " visible order(s).";
         }
     }
 

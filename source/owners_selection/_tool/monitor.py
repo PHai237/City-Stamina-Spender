@@ -51,6 +51,9 @@ CLAIM_COST_12_TEMPLATE = cv2.imread(
 CLAIM_COST_8_TEMPLATE = cv2.imread(
     str(WORKSPACE / "loop_assets/claim_cost_8.png"), cv2.IMREAD_GRAYSCALE
 )
+CLAIM_COST_0_TEMPLATE = cv2.imread(
+    str(WORKSPACE / "loop_assets/claim_cost_0.png"), cv2.IMREAD_GRAYSCALE
+)
 DEBUG_DIR = WORKSPACE / "gameplay_exit_debug"
 REVENUE_SAMPLE_DIR = WORKSPACE / "revenue_samples"
 REVENUE_DIGIT_DIR = WORKSPACE / "loop_assets/revenue_digits"
@@ -358,6 +361,10 @@ def click_claim_if_visible(target: dict) -> bool:
 
 def detect_claim_cost(claim_area: np.ndarray) -> int:
     cost_scores: list[tuple[int, float]] = []
+    if CLAIM_COST_0_TEMPLATE is not None:
+        match_0 = find_template_multiscale(claim_area, CLAIM_COST_0_TEMPLATE, 0.0)
+        if match_0:
+            cost_scores.append((0, match_0[3]))
     if CLAIM_COST_12_TEMPLATE is not None:
         match_12 = find_template_multiscale(claim_area, CLAIM_COST_12_TEMPLATE, 0.0)
         if match_12:
@@ -368,19 +375,19 @@ def detect_claim_cost(claim_area: np.ndarray) -> int:
             cost_scores.append((8, match_8[3]))
 
     if not cost_scores:
-        log("Claim cost templates missing or not comparable; fallback spent=8")
-        return 8
+        log("Claim cost templates missing or not comparable; spent=0")
+        return 0
 
     cost, score = max(cost_scores, key=lambda item: item[1])
     log(
         "Detected claim cost candidate "
         + " ".join(f"{candidate}={candidate_score:.3f}" for candidate, candidate_score in cost_scores)
     )
-    if score >= 0.70:
+    if score >= 0.78:
         return cost
 
-    log(f"Claim cost score too low ({score:.3f}); fallback spent=8")
-    return 8
+    log(f"Claim cost score too low ({score:.3f}); spent=0")
+    return 0
 
 
 def wait_for_challenge_and_claim(timeout: float = 15.0) -> int:

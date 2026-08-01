@@ -915,9 +915,9 @@ def open_shop_and_monitor(target: dict, args: argparse.Namespace) -> int:
     shop_rel_x, shop_rel_y = scale_point(target["client"], OPEN_SHOP_POINT, "right")
     shop_x = target["client"]["left"] + shop_rel_x
     shop_y = target["client"]["top"] + shop_rel_y
-    print(f"Da xac minh giao dien {args.stage}. Dang bam Open Shop...")
     log(f"Click Open Shop point=({shop_x},{shop_y})")
-    fast_click(target["hwnd"], shop_x, shop_y, focus_delay=0.08)
+    fast_click(target["hwnd"], shop_x, shop_y, focus_delay=0.0)
+    print(f"Da xac minh giao dien {args.stage}. Dang bam Open Shop...")
     print("Da bam Open Shop.")
     if args.stage == "1-1":
         print("Dang xu ly order stage 1-1...")
@@ -977,7 +977,7 @@ def main() -> int:
     )
     parser.add_argument("--threshold", type=float, default=0.75)
     parser.add_argument("--verify-threshold", type=float, default=0.65)
-    parser.add_argument("--verify-timeout", type=float, default=8.0)
+    parser.add_argument("--verify-timeout", type=float, default=2.5)
     parser.add_argument("--attempts", type=int, default=35)
     parser.add_argument("--wheel-steps", type=int, default=15)
     parser.add_argument("--wait", type=float, default=0.25)
@@ -1089,7 +1089,7 @@ def main() -> int:
             print("Could not find the NTE window.")
             return 2
 
-        focus_window(target["hwnd"], 0.5)
+        focus_window(target["hwnd"], 0.12)
         target = find_nte_window()
         if not target:
             print("Khong tim thay cua so NTE sau khi dua len truoc.")
@@ -1137,14 +1137,15 @@ def main() -> int:
             )
             if not args.no_click:
                 log(f"Found match score={score:.3f} click=({click_x},{click_y})")
-                click(target["hwnd"], click_x, click_y)
+                fast_click(target["hwnd"], click_x, click_y, focus_delay=0.03)
                 print(f"Clicked stage {stage_label}.")
+                verify_timeout = min(args.verify_timeout, 0.8) if args.stage == "1-1" else args.verify_timeout
                 if not wait_for_stage_1_9(
                     target["client"],
                     title_template,
                     title_number_template,
                     args.verify_threshold,
-                    args.verify_timeout,
+                    verify_timeout,
                 ):
                     print(f"Could not verify stage {stage_label}. Did not click Open Shop.")
                     return 5
