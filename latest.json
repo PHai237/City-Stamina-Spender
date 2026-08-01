@@ -1,5 +1,5 @@
 {
-  "version": "1.2.7",
-  "url": "https://github.com/PHai237/City-Stamina-Spender/releases/download/v1.2.7/City.Stamina.Spender.Update.zip",
-  "notes": "Stage 1-1 serving flow and claim cost fixes."
+  "version": "1.2.8",
+  "url": "https://github.com/PHai237/City-Stamina-Spender/releases/download/v1.2.8/City.Stamina.Spender.Update.zip",
+  "notes": "More reliable updater downloads with retry support."
 }

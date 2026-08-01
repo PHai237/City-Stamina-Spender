@@ -10,6 +10,7 @@ using System.Runtime.InteropServices;
 using System.Text;
 using System.Text.Json;
 using System.Text.RegularExpressions;
+using System.Threading;
 using System.Threading.Tasks;
 using CommunityToolkit.Mvvm.ComponentModel;
 using CommunityToolkit.Mvvm.Input;
@@ -18,7 +19,7 @@ namespace CityStamina.Avalonia.ViewModels;
 
 public partial class MainViewModel : ViewModelBase
 {
-    public const string AppVersion = "1.2.7";
+    public const string AppVersion = "1.2.8";
     private const string LatestManifestUrl = "https://raw.githubusercontent.com/PHai237/City-Stamina-Spender/main/latest.json";
     private const string StageOneNine = "Stage 1-9";
     private const string StageOneOne = "Stage 1-1";
@@ -340,11 +341,7 @@ public partial class MainViewModel : ViewModelBase
             var downloadPath = Path.Combine(tempDir, isExeUpdate ? "City Stamina Spender.exe" : "update.zip");
 
             using var client = CreateHttpClient();
-            await using (var source = await client.GetStreamAsync(_latestDownloadUrl))
-            await using (var target = File.Create(downloadPath))
-            {
-                await source.CopyToAsync(target);
-            }
+            await DownloadFileWithRetryAsync(client, _latestDownloadUrl, downloadPath);
 
             string? sourceDir = null;
             if (!isExeUpdate)
@@ -379,7 +376,7 @@ public partial class MainViewModel : ViewModelBase
         catch (Exception ex)
         {
             UpdateState = "error";
-            UpdateMessage = "Update failed: " + ex.Message;
+            UpdateMessage = "Update failed: " + ToUserFriendlyUpdateError(ex);
         }
     }
 
@@ -781,9 +778,70 @@ public partial class MainViewModel : ViewModelBase
 
     private static HttpClient CreateHttpClient()
     {
-        var client = new HttpClient { Timeout = TimeSpan.FromSeconds(45) };
+        var client = new HttpClient { Timeout = TimeSpan.FromMinutes(5) };
         client.DefaultRequestHeaders.UserAgent.ParseAdd("City-Stamina-Spender/" + AppVersion);
         return client;
+    }
+
+    private static async Task DownloadFileWithRetryAsync(HttpClient client, string url, string destinationPath)
+    {
+        Exception? lastError = null;
+        for (var attempt = 1; attempt <= 4; attempt++)
+        {
+            try
+            {
+                if (File.Exists(destinationPath))
+                {
+                    File.Delete(destinationPath);
+                }
+
+                using var response = await client.GetAsync(url, HttpCompletionOption.ResponseHeadersRead);
+                response.EnsureSuccessStatusCode();
+
+                await using var source = await response.Content.ReadAsStreamAsync();
+                await using var target = new FileStream(
+                    destinationPath,
+                    FileMode.Create,
+                    FileAccess.Write,
+                    FileShare.None,
+                    bufferSize: 1024 * 128,
+                    useAsync: true
+                );
+                await source.CopyToAsync(target);
+
+                if (new FileInfo(destinationPath).Length <= 0)
+                {
+                    throw new IOException("Downloaded file is empty.");
+                }
+
+                return;
+            }
+            catch (Exception ex) when (ex is HttpRequestException or IOException or TaskCanceledException)
+            {
+                lastError = ex;
+                if (attempt == 4)
+                {
+                    break;
+                }
+
+                await Task.Delay(TimeSpan.FromSeconds(attempt * 2));
+            }
+        }
+
+        throw new IOException("Download failed after several retries. Please try again or download the latest exe from GitHub.", lastError);
+    }
+
+    private static string ToUserFriendlyUpdateError(Exception ex)
+    {
+        var message = ex.Message;
+        if (message.Contains("forcibly closed", StringComparison.OrdinalIgnoreCase)
+            || message.Contains("transport connection", StringComparison.OrdinalIgnoreCase)
+            || message.Contains("connection", StringComparison.OrdinalIgnoreCase))
+        {
+            return "network connection was interrupted while downloading. Please try Update again, or download the latest exe from GitHub.";
+        }
+
+        return message;
     }
 
     private static int CompareVersions(string left, string right)
