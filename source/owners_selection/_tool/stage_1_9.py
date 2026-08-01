@@ -131,8 +131,9 @@ def run_cycle(
     first_line: int = 2,
     stage: str = "1-9",
     skip_support_employee_check: bool = False,
+    verify_timeout: float | None = None,
 ) -> tuple[int, int | None, int]:
-    child_lines, wait_for_child = start_play_cycle(stage, skip_support_employee_check)
+    child_lines, wait_for_child = start_play_cycle(stage, skip_support_employee_check, verify_timeout)
     stage_label = f"stage {stage}"
     spent = None
     opened_shop = False
@@ -276,7 +277,11 @@ class QueueWriter(io.TextIOBase):
             self.buffer = ""
 
 
-def start_play_cycle(stage: str = "1-9", skip_support_employee_check: bool = False) -> tuple[Iterator[str], Callable[[], int]]:
+def start_play_cycle(
+    stage: str = "1-9",
+    skip_support_employee_check: bool = False,
+    verify_timeout: float | None = None,
+) -> tuple[Iterator[str], Callable[[], int]]:
     if not getattr(sys, "frozen", False):
         command = [
             sys.executable,
@@ -286,6 +291,8 @@ def start_play_cycle(stage: str = "1-9", skip_support_employee_check: bool = Fal
             "--stage",
             stage,
         ]
+        if verify_timeout is not None:
+            command.extend(["--verify-timeout", str(verify_timeout)])
         if skip_support_employee_check:
             command.append("--skip-support-employee-check")
         process = subprocess.Popen(
@@ -313,6 +320,8 @@ def start_play_cycle(stage: str = "1-9", skip_support_employee_check: bool = Fal
         try:
             sys.argv = ["play.py", "--elevated-child"]
             sys.argv.extend(["--stage", stage])
+            if verify_timeout is not None:
+                sys.argv.extend(["--verify-timeout", str(verify_timeout)])
             if skip_support_employee_check:
                 sys.argv.append("--skip-support-employee-check")
             with contextlib.redirect_stdout(writer), contextlib.redirect_stderr(writer):
@@ -368,6 +377,7 @@ def main() -> int:
     )
     parser.add_argument("--between-cycles", type=float, default=3.0)
     parser.add_argument("--owner-timeout", type=float, default=20.0)
+    parser.add_argument("--verify-timeout", type=float, default=None, help=argparse.SUPPRESS)
     parser.add_argument("--stage", choices=["1-9", "1-1"], default="1-9")
     parser.add_argument("--skip-support-employee-check", action="store_true", help=argparse.SUPPRESS)
     parser.add_argument("--tune-stage-1-1", action="store_true", help=argparse.SUPPRESS)
@@ -446,6 +456,7 @@ def main() -> int:
             next_line,
             args.stage,
             support_employee_checked,
+            args.verify_timeout,
         )
         if result != 0:
             print(f"  Line {next_line}: Stopped.")
