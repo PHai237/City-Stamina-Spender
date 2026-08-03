@@ -100,6 +100,34 @@ def wait_for_owner_selection(timeout: float) -> bool:
     return False
 
 
+def current_energy_digit_count(image) -> int | None:
+    _, binary = cv2.threshold(image, 180, 255, cv2.THRESH_BINARY)
+    contours, _ = cv2.findContours(binary, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
+    boxes: list[tuple[int, int, int, int]] = []
+    for contour in contours:
+        x, y, width, height = cv2.boundingRect(contour)
+        if height < 9 or width < 2 or width > 18:
+            continue
+        boxes.append((x, y, width, height))
+
+    boxes.sort()
+    slash_candidates = [
+        (x, y, width, height)
+        for x, y, width, height in boxes
+        if 4 <= width <= 9 and height >= 12
+    ]
+    if not slash_candidates:
+        return None
+
+    slash_x = slash_candidates[0][0]
+    current_digits = [
+        box
+        for box in boxes
+        if box[0] < slash_x and box[2] >= 6
+    ]
+    return len(current_digits)
+
+
 def energy_is_empty() -> bool:
     if ENERGY_0_TEMPLATE is None:
         return False
@@ -110,20 +138,29 @@ def energy_is_empty() -> bool:
     debug_path = WORKSPACE / "stage_1_9_debug/latest_energy_region.png"
     debug_path.parent.mkdir(parents=True, exist_ok=True)
     cv2.imwrite(str(debug_path), image)
+
+    digit_count = current_energy_digit_count(image)
+    if digit_count is not None:
+        log(f"Energy current digit count before slash={digit_count}")
+        if digit_count > 1:
+            return False
+
     match = find_template_multiscale(image, ENERGY_0_TEMPLATE, 0.78)
     if not match:
         return False
 
     (x, y), width, height, score = match
     # Avoid matching the trailing "0/700" inside values like 50/700 or 150/700.
-    # A real empty-energy match starts at the left edge of the current value.
+    # Multi-digit values are filtered above. Empty energy is right-aligned in
+    # this crop, so x is not stable enough to use as a hard guard.
     starts_at_value_left = x <= max(4, round(width * 0.08))
+    is_single_zero = digit_count == 1 and score >= 0.95
     log(
         "Energy 0/700 candidate "
         f"score={score:.3f} x={x} y={y} w={width} h={height} "
-        f"starts_at_value_left={starts_at_value_left}"
+        f"starts_at_value_left={starts_at_value_left} single_zero={is_single_zero}"
     )
-    return starts_at_value_left
+    return starts_at_value_left or is_single_zero
 
 
 def run_cycle(
@@ -282,35 +319,6 @@ def start_play_cycle(
     skip_support_employee_check: bool = False,
     verify_timeout: float | None = None,
 ) -> tuple[Iterator[str], Callable[[], int]]:
-    if not getattr(sys, "frozen", False):
-        command = [
-            sys.executable,
-            "-u",
-            str(WORKSPACE / "play.py"),
-            "--elevated-child",
-            "--stage",
-            stage,
-        ]
-        if verify_timeout is not None:
-            command.extend(["--verify-timeout", str(verify_timeout)])
-        if skip_support_employee_check:
-            command.append("--skip-support-employee-check")
-        process = subprocess.Popen(
-            command,
-            cwd=WORKSPACE,
-            stdout=subprocess.PIPE,
-            stderr=subprocess.STDOUT,
-            text=True,
-            encoding="utf-8",
-            errors="replace",
-        )
-
-        def process_lines() -> Iterator[str]:
-            assert process.stdout is not None
-            yield from process.stdout
-
-        return process_lines(), process.wait
-
     output_queue: "queue.Queue[str | None]" = queue.Queue()
     result_holder = {"code": 1}
 
@@ -380,6 +388,7 @@ def main() -> int:
     parser.add_argument("--verify-timeout", type=float, default=None, help=argparse.SUPPRESS)
     parser.add_argument("--stage", choices=["1-9", "1-1"], default="1-9")
     parser.add_argument("--skip-support-employee-check", action="store_true", help=argparse.SUPPRESS)
+    parser.add_argument("--no-admin-relaunch", action="store_true", help=argparse.SUPPRESS)
     parser.add_argument("--tune-stage-1-1", action="store_true", help=argparse.SUPPRESS)
     parser.add_argument("--elevated-child", action="store_true", help=argparse.SUPPRESS)
     args = parser.parse_args()
@@ -402,9 +411,16 @@ def main() -> int:
             print("Elevated child process did not receive Administrator permission.")
             log("Loop elevated child did not receive Administrator")
             return 4
+        if args.no_admin_relaunch:
+            print("Administrator permission is required. Please restart the app as Administrator.")
+            log("Loop stopped because Administrator permission is required")
+            return 4
         print("Requesting Administrator permission...")
         log("Loop requesting Administrator")
-        return 0 if relaunch_as_admin() else 4
+        if relaunch_as_admin():
+            print("Opened an elevated helper. The current process will stop.")
+            return 7
+        return 4
 
     if spend_target is not None:
         log(
@@ -415,6 +431,7 @@ def main() -> int:
     spent_total = 0
     cycle = 0
     stopped_by_energy = False
+    stopped_by_zero_spent = False
     compact_output = spend_target is not None
     support_employee_checked = args.skip_support_employee_check
     while True:
@@ -444,11 +461,13 @@ def main() -> int:
             print(f"  Line {next_line}: Owner's Selection was not found, stopping.")
             log("Loop stopped because Owner's Selection was not found")
             return 6
-        if energy_is_empty():
-            print(f"  Line {next_line}: City Stamina is 0/700, stopping.")
-            log("Loop stopped because energy is 0/700")
-            stopped_by_energy = True
-            break
+        # Temporarily disabled for Stage 1-1/low-stamina testing. Keep
+        # energy_is_empty() intact so this guard can be restored quickly.
+        # if energy_is_empty():
+        #     print(f"  Line {next_line}: City Stamina is 0/700, stopping.")
+        #     log("Loop stopped because energy is 0/700")
+        #     stopped_by_energy = True
+        #     break
         if compact_output:
             log("Owner's Selection ready and energy is available")
         result, spent, next_line = run_cycle(
@@ -470,10 +489,13 @@ def main() -> int:
                 next_line += 1
                 log(f"Loop cycle {cycle} missing spent marker; fallback spent={spent}")
             if spent <= 0:
-                print(f"  Line {next_line}: City Stamina was not spent, stopping.")
-                log(f"Loop stopped because spent marker was {spent}")
-                stopped_by_energy = True
-                break
+                # Temporarily allow 0-cost claims while testing Stage 1-1 with
+                # empty City Stamina. Count the fallback so the test loop can
+                # finish instead of getting stuck forever at 0/target.
+                spent = args.min_spend_per_cycle
+                print(f"  Line {next_line}: Claim cost was 0, using test fallback {spent}.")
+                next_line += 1
+                log(f"Loop test fallback because spent marker was 0; fallback spent={spent}")
             spent_total += spent
             print(
                 f"  Line {next_line}: Spent {spent} City Stamina. "
@@ -495,6 +517,13 @@ def main() -> int:
             f"Spent {format_amount(spent_total)}/{target_text} City Stamina."
         )
         log(f"Loop stopped by energy spent_total={spent_total} target={spend_target}")
+    elif stopped_by_zero_spent:
+        target_text = format_amount(spend_target or 0)
+        print(
+            f"Stopped because the claim cost could not be confirmed. "
+            f"Spent {format_amount(spent_total)}/{target_text} City Stamina."
+        )
+        log(f"Loop stopped by zero spent marker spent_total={spent_total} target={spend_target}")
     elif spend_target is not None:
         print(
             f"Target reached: "

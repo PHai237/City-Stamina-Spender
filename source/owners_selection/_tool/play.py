@@ -41,6 +41,8 @@ TITLE_REGION = {"left": 245, "top": 80, "width": 760, "height": 80}
 OWNER_REGION = {"left": 10, "top": 5, "width": 280, "height": 65}
 OWNER_THRESHOLD = 0.60
 OPEN_SHOP_POINT = (1145, 670)
+OPEN_SHOP_SEARCH_TOP_RATIO = 0.70
+OPEN_SHOP_SEARCH_LEFT_RATIO = 0.35
 SWAP_EMPLOYEE_POINT = (777, 670)
 SUPPORT_CONFIRM_POINT = (640, 564)
 SUPPORT_TOP_SLOT_POINTS = {
@@ -235,6 +237,28 @@ def capture_region(
     return cv2.cvtColor(image, cv2.COLOR_BGRA2GRAY)
 
 
+def capture_client_band_color(
+    client: dict[str, int],
+    left_ratio: float,
+    top_ratio: float,
+    right_ratio: float = 1.0,
+    bottom_ratio: float = 1.0,
+) -> tuple[np.ndarray, dict[str, int]]:
+    left = client["left"] + round(client["width"] * left_ratio)
+    top = client["top"] + round(client["height"] * top_ratio)
+    right = client["left"] + round(client["width"] * right_ratio)
+    bottom = client["top"] + round(client["height"] * bottom_ratio)
+    region = {
+        "left": left,
+        "top": top,
+        "width": max(1, right - left),
+        "height": max(1, bottom - top),
+    }
+    with mss.MSS() as sct:
+        image = np.asarray(sct.grab(region))
+    return cv2.cvtColor(image, cv2.COLOR_BGRA2BGR), region
+
+
 def capture_list(client: dict[str, int]) -> np.ndarray:
     return capture_region(client, LIST_REGION)
 
@@ -290,21 +314,22 @@ def find_template_multiscale(
     return None
 
 
-def find_stage_1_9_in_list(
+def find_stage_in_list(
     image: np.ndarray,
     label_template: np.ndarray,
     number_template: np.ndarray | None,
     client: dict[str, int],
     threshold: float,
+    stage_label: str,
 ) -> tuple | None:
     if number_template is not None:
         number_match = find_template_multiscale(image, number_template, 0.65)
         if number_match:
-            log(f"Matched stage 1-9 number score={number_match[3]:.3f}")
+            log(f"Matched stage {stage_label} number score={number_match[3]:.3f}")
             return number_match
         best_number = find_template_multiscale(image, number_template, 0.0)
         if best_number:
-            log(f"Stage 1-9 number best_score={best_number[3]:.3f}")
+            log(f"Stage {stage_label} number best_score={best_number[3]:.3f}")
 
     scaled_template = scale_template(label_template, client)
     return find_template(image, scaled_template, threshold)
@@ -449,6 +474,60 @@ def save_debug_image(
     cv2.imwrite(str(output_path), debug)
 
 
+def find_bottom_action_button(client: dict[str, int]) -> tuple[int, int, float] | None:
+    image, region = capture_client_band_color(
+        client,
+        OPEN_SHOP_SEARCH_LEFT_RATIO,
+        OPEN_SHOP_SEARCH_TOP_RATIO,
+    )
+    hsv = cv2.cvtColor(image, cv2.COLOR_BGR2HSV)
+    # Open Shop is a saturated, bright action button. Detect the button body
+    # instead of relying on a scaled point; this survives horizontal stretching.
+    mask = cv2.inRange(hsv, (30, 45, 80), (135, 255, 255))
+    kernel = cv2.getStructuringElement(cv2.MORPH_RECT, (9, 5))
+    mask = cv2.morphologyEx(mask, cv2.MORPH_CLOSE, kernel, iterations=2)
+    contours, _ = cv2.findContours(mask, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
+
+    candidates: list[tuple[int, int, int, int, float]] = []
+    image_area = image.shape[0] * image.shape[1]
+    for contour in contours:
+        area = float(cv2.contourArea(contour))
+        if area < max(500.0, image_area * 0.004):
+            continue
+        x, y, width, height = cv2.boundingRect(contour)
+        if width < 55 or height < 24:
+            continue
+        aspect = width / max(1, height)
+        if not 1.6 <= aspect <= 7.5:
+            continue
+        # Avoid tiny UI pills and prefer lower/right action buttons.
+        score = area + x * 2.0 + y * 1.5 + width * height * 0.25
+        candidates.append((x, y, width, height, score))
+
+    if not candidates:
+        debug_path = WORKSPACE / "stage_1_9_debug/open_shop_button_search.png"
+        debug_path.parent.mkdir(parents=True, exist_ok=True)
+        cv2.imwrite(str(debug_path), image)
+        log("Open Shop visual search failed: no action button candidate")
+        return None
+
+    x, y, width, height, score = max(candidates, key=lambda item: item[4])
+    debug = image.copy()
+    cv2.rectangle(debug, (x, y), (x + width, y + height), (0, 0, 255), 2)
+    debug_path = WORKSPACE / "stage_1_9_debug/open_shop_button_search.png"
+    debug_path.parent.mkdir(parents=True, exist_ok=True)
+    cv2.imwrite(str(debug_path), debug)
+
+    click_x = region["left"] + x + width // 2
+    click_y = region["top"] + y + height // 2
+    log(
+        "Open Shop visual candidate "
+        f"region={region} box=({x},{y},{width},{height}) "
+        f"click=({click_x},{click_y}) score={score:.1f}"
+    )
+    return click_x, click_y, score
+
+
 def save_calibration_shots(output_dir: Path) -> int:
     import mss
 
@@ -511,12 +590,13 @@ def save_calibration_shots(output_dir: Path) -> int:
     return 0
 
 
-def wait_for_stage_1_9(
+def wait_for_stage_selected(
     client: dict[str, int],
     title_template: np.ndarray,
     title_number_template: np.ndarray | None,
     threshold: float,
     timeout: float,
+    stage_label: str,
 ) -> bool:
     deadline = time.monotonic() + timeout
     while time.monotonic() < deadline:
@@ -530,20 +610,21 @@ def wait_for_stage_1_9(
             save_debug_image(
                 title_image,
                 match,
-                WORKSPACE / "stage_1_9_debug/verified_stage_1_9_title.png",
+                WORKSPACE / "stage_1_9_debug/verified_stage_title.png",
             )
-            log(f"Verified stage 1-9 title score={match[3]:.3f}")
+            log(f"Verified stage {stage_label} title score={match[3]:.3f}")
             return True
         human_sleep(0.25, 0.35)
-    log("Stage 1-9 title verification timed out")
+    log(f"Stage {stage_label} title verification timed out")
     return False
 
 
-def selected_stage_1_9(
+def selected_stage(
     client: dict[str, int],
     title_template: np.ndarray,
     title_number_template: np.ndarray | None,
     threshold: float,
+    stage_label: str,
 ) -> tuple | None:
     title_image = capture_region(client, TITLE_REGION)
     match = None
@@ -555,9 +636,9 @@ def selected_stage_1_9(
         save_debug_image(
             title_image,
             match,
-            WORKSPACE / "stage_1_9_debug/verified_stage_1_9_title.png",
+            WORKSPACE / "stage_1_9_debug/verified_stage_title.png",
         )
-        log(f"Stage 1-9 already selected score={match[3]:.3f}")
+        log(f"Stage {stage_label} already selected score={match[3]:.3f}")
     else:
         best_match = best_template_match(
             title_image,
@@ -566,6 +647,7 @@ def selected_stage_1_9(
         if best_match:
             log(
                 "Stage 1-9 title not selected "
+                f"stage={stage_label} "
                 f"best_score={best_match[3]:.3f} threshold={threshold:.3f}"
             )
     return match
@@ -912,10 +994,15 @@ def open_support_employee_page_only(target: dict) -> bool:
 
 
 def open_shop_and_monitor(target: dict, args: argparse.Namespace) -> int:
-    shop_rel_x, shop_rel_y = scale_point(target["client"], OPEN_SHOP_POINT, "right")
-    shop_x = target["client"]["left"] + shop_rel_x
-    shop_y = target["client"]["top"] + shop_rel_y
-    log(f"Click Open Shop point=({shop_x},{shop_y})")
+    visual_button = find_bottom_action_button(target["client"])
+    if visual_button is not None:
+        shop_x, shop_y, _ = visual_button
+        log(f"Click Open Shop visual point=({shop_x},{shop_y})")
+    else:
+        shop_rel_x, shop_rel_y = scale_point(target["client"], OPEN_SHOP_POINT, "right")
+        shop_x = target["client"]["left"] + shop_rel_x
+        shop_y = target["client"]["top"] + shop_rel_y
+        log(f"Click Open Shop fallback point=({shop_x},{shop_y})")
     fast_click(target["hwnd"], shop_x, shop_y, focus_delay=0.0)
     print(f"Da xac minh giao dien {args.stage}. Dang bam Open Shop...")
     print("Da bam Open Shop.")
@@ -1103,11 +1190,12 @@ def main() -> int:
         if args.open_support_only:
             return 0 if open_support_employee_page_only(target) else 7
 
-        if selected_stage_1_9(
+        if selected_stage(
             target["client"],
             title_template,
             title_number_template,
             args.verify_threshold,
+            stage_label,
         ):
             print(f"Stage {stage_label} is already selected.")
             if not args.no_click and not args.select_stage_only:
@@ -1117,12 +1205,13 @@ def main() -> int:
         image = capture_list(target["client"])
         scaled_list_region = scale_region(target["client"], LIST_REGION, "left")
         scaled_template = scale_template(template, target["client"])
-        match = find_stage_1_9_in_list(
+        match = find_stage_in_list(
             image,
             template,
             number_template,
             target["client"],
             args.threshold,
+            stage_label,
         )
         if match:
             location, width, height, score = match
@@ -1139,13 +1228,14 @@ def main() -> int:
                 log(f"Found match score={score:.3f} click=({click_x},{click_y})")
                 fast_click(target["hwnd"], click_x, click_y, focus_delay=0.03)
                 print(f"Clicked stage {stage_label}.")
-                verify_timeout = min(args.verify_timeout, 0.8) if args.stage == "1-1" else args.verify_timeout
-                if not wait_for_stage_1_9(
+                verify_timeout = min(args.verify_timeout, 1.0) if args.stage == "1-1" else args.verify_timeout
+                if not wait_for_stage_selected(
                     target["client"],
                     title_template,
                     title_number_template,
                     args.verify_threshold,
                     verify_timeout,
+                    stage_label,
                 ):
                     print(f"Could not verify stage {stage_label}. Did not click Open Shop.")
                     return 5

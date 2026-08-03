@@ -1,6 +1,7 @@
 using System;
 using System.ComponentModel;
 using System.IO;
+using System.Runtime.InteropServices;
 using System.Text.Json;
 using System.Windows.Forms;
 using CityStamina.Avalonia.ViewModels;
@@ -11,13 +12,21 @@ namespace CityStamina.Avalonia.Views;
 
 public sealed class MainForm : Form
 {
+    private const int WhKeyboardLl = 13;
+    private const int WmKeydown = 0x0100;
+    private const int WmSyskeydown = 0x0104;
+    private const uint VkF5 = 0x74;
+
     private readonly MainViewModel _viewModel;
     private readonly WebView2 _webView = new() { Dock = DockStyle.Fill };
+    private readonly LowLevelKeyboardProc _keyboardProc;
     private bool _webReady;
+    private IntPtr _keyboardHook;
 
     public MainForm(MainViewModel viewModel)
     {
         _viewModel = viewModel;
+        _keyboardProc = KeyboardHookCallback;
         Text = "City Stamina Spender";
         FormBorderStyle = FormBorderStyle.FixedSingle;
         MaximizeBox = false;
@@ -29,7 +38,15 @@ public sealed class MainForm : Form
         Controls.Add(_webView);
         _viewModel.PropertyChanged += OnViewModelPropertyChanged;
         Load += OnLoad;
-        FormClosed += (_, _) => _viewModel.PropertyChanged -= OnViewModelPropertyChanged;
+        FormClosed += (_, _) =>
+        {
+            if (_keyboardHook != IntPtr.Zero)
+            {
+                UnhookWindowsHookEx(_keyboardHook);
+                _keyboardHook = IntPtr.Zero;
+            }
+            _viewModel.PropertyChanged -= OnViewModelPropertyChanged;
+        };
     }
 
     private async void OnLoad(object? sender, EventArgs e)
@@ -42,6 +59,25 @@ public sealed class MainForm : Form
 
         var indexPath = FindWebUiIndexPath();
         _webView.CoreWebView2.Navigate(new Uri(indexPath).AbsoluteUri);
+        InstallKeyboardHook();
+    }
+
+    private void InstallKeyboardHook()
+    {
+        _keyboardHook = SetWindowsHookEx(
+            WhKeyboardLl,
+            _keyboardProc,
+            GetModuleHandle(null),
+            0
+        );
+
+        if (_keyboardHook == IntPtr.Zero)
+        {
+            _viewModel.ReportHotkey($"F5 hotkey failed: {Marshal.GetLastWin32Error()}");
+            return;
+        }
+
+        _viewModel.ReportHotkey("F5 hotkey ready.");
     }
 
     private void OnNavigationCompleted(object? sender, CoreWebView2NavigationCompletedEventArgs e)
@@ -59,7 +95,10 @@ public sealed class MainForm : Form
 
         if (InvokeRequired)
         {
-            BeginInvoke(PostState);
+            BeginInvoke(() =>
+            {
+                PostState();
+            });
             return;
         }
 
@@ -121,6 +160,50 @@ public sealed class MainForm : Form
         {
             command.Execute(null);
         }
+    }
+
+    private IntPtr KeyboardHookCallback(int nCode, IntPtr wParam, IntPtr lParam)
+    {
+        if (
+            nCode >= 0
+            && (wParam == WmKeydown || wParam == WmSyskeydown)
+            && (uint)Marshal.ReadInt32(lParam) == VkF5
+        )
+        {
+            if (!IsDisposed)
+            {
+                BeginInvoke(ToggleRunFromHotkey);
+            }
+            return 1;
+        }
+
+        return CallNextHookEx(_keyboardHook, nCode, wParam, lParam);
+    }
+
+    private void ToggleRunFromHotkey()
+    {
+        if (_viewModel.IsRunning)
+        {
+            _viewModel.ReportHotkey("F5: Stop.");
+            ExecuteIfPossible(_viewModel.StopCommand);
+            return;
+        }
+
+        if (!_viewModel.IsDetailVisible)
+        {
+            _viewModel.ReportHotkey("F5: Open Owner's Selection first.");
+            return;
+        }
+
+        var amount = _viewModel.TargetStamina;
+        if (_viewModel.RunCommand.CanExecute(amount))
+        {
+            _viewModel.ReportHotkey("F5: Run.");
+            _viewModel.RunCommand.Execute(amount);
+            return;
+        }
+
+        _viewModel.ReportHotkey("F5: Enter target amount first.");
     }
 
     private void PostState()
@@ -195,4 +278,23 @@ public sealed class MainForm : Form
 
         return Path.Combine(Directory.GetCurrentDirectory(), "web_ui", "index.html");
     }
+
+    private delegate IntPtr LowLevelKeyboardProc(int nCode, IntPtr wParam, IntPtr lParam);
+
+    [DllImport("user32.dll", SetLastError = true)]
+    private static extern IntPtr SetWindowsHookEx(
+        int idHook,
+        LowLevelKeyboardProc lpfn,
+        IntPtr hMod,
+        uint dwThreadId
+    );
+
+    [DllImport("user32.dll", SetLastError = true)]
+    private static extern bool UnhookWindowsHookEx(IntPtr hhk);
+
+    [DllImport("user32.dll")]
+    private static extern IntPtr CallNextHookEx(IntPtr hhk, int nCode, IntPtr wParam, IntPtr lParam);
+
+    [DllImport("kernel32.dll", CharSet = CharSet.Auto, SetLastError = true)]
+    private static extern IntPtr GetModuleHandle(string? lpModuleName);
 }

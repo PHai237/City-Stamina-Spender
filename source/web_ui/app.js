@@ -20,8 +20,8 @@ const state = {
   isDetailVisible: false,
   isRunning: false,
   stageDropdownOpen: false,
-  currentVersion: "1.2.8",
-  latestVersion: "1.2.8",
+  currentVersion: "1.2.9",
+  latestVersion: "1.2.9",
   updateState: "checking",
   updateMessage: "Checking for updates...",
   isUpdateAvailable: false,
@@ -334,6 +334,7 @@ function bindEvents() {
   if (targetInput) {
     targetInput.addEventListener("input", (event) => {
       state.targetStamina = event.target.value;
+      post({ type: "setTarget", value: state.targetStamina });
     });
   }
 
@@ -342,8 +343,21 @@ function bindEvents() {
 
   const stopButton = document.getElementById("stopButton");
   if (stopButton) stopButton.addEventListener("click", () => post({ type: "stop" }));
-
 }
+
+document.addEventListener("keydown", (event) => {
+  if (event.repeat || event.ctrlKey || event.altKey || event.metaKey || event.key !== "F5") return;
+  event.preventDefault();
+
+  if (state.isRunning) {
+    post({ type: "stop" });
+    return;
+  }
+
+  if (state.isDetailVisible) {
+    post({ type: "run", amount: state.targetStamina });
+  }
+});
 
 if (window.chrome && window.chrome.webview) {
   window.chrome.webview.addEventListener("message", (event) => {

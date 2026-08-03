@@ -19,7 +19,7 @@ namespace CityStamina.Avalonia.ViewModels;
 
 public partial class MainViewModel : ViewModelBase
 {
-    public const string AppVersion = "1.2.8";
+    public const string AppVersion = "1.2.9";
     private const string LatestManifestUrl = "https://raw.githubusercontent.com/PHai237/City-Stamina-Spender/main/latest.json";
     private const string StageOneNine = "Stage 1-9";
     private const string StageOneOne = "Stage 1-1";
@@ -47,6 +47,7 @@ public partial class MainViewModel : ViewModelBase
     private readonly Stopwatch _runStopwatch = new();
     private System.Timers.Timer? _elapsedTimer;
     private bool _stopRequested;
+    private bool _automationReachedTarget;
     private int _sessionSpent;
     private int _currentRunSpent;
     private int _runsToday;
@@ -172,6 +173,7 @@ public partial class MainViewModel : ViewModelBase
         }
 
         _stopRequested = false;
+        _automationReachedTarget = false;
         IsRunning = true;
         _runsToday++;
         RefreshHubMetrics();
@@ -228,7 +230,14 @@ public partial class MainViewModel : ViewModelBase
             }
             else if (exitCode == 0)
             {
-                AppendLog("Completed.");
+                if (_automationReachedTarget || SelectedStageArg == "1-1")
+                {
+                    AppendLog("Completed.");
+                }
+                else
+                {
+                    AppendLog("Stopped before the target was reached.");
+                }
             }
             else
             {
@@ -242,7 +251,7 @@ public partial class MainViewModel : ViewModelBase
         }
         finally
         {
-            if (_stopRequested)
+            if (_stopRequested && _lastUiLogLine != "Stopped.")
             {
                 AppendLog("Stopped.");
             }
@@ -273,6 +282,12 @@ public partial class MainViewModel : ViewModelBase
         }
 
         AppendLog("Stopping...");
+    }
+
+    public void ReportHotkey(string message)
+    {
+        AppendLog(message);
+        WriteWrapperDebug("hotkey", message);
     }
 
     [RelayCommand]
@@ -456,10 +471,10 @@ public partial class MainViewModel : ViewModelBase
 
     private Process StartOwnerProcess(int amount, string stage, bool skipSupportEmployeeCheck)
     {
-        var arguments = amount.ToString(CultureInfo.InvariantCulture) + $" --stage {stage}";
+        var arguments = amount.ToString(CultureInfo.InvariantCulture) + $" --stage {stage} --no-admin-relaunch";
         if (stage == "1-1")
         {
-            arguments += " --owner-timeout 6 --verify-timeout 2.5 --between-cycles 1";
+            arguments += " --owner-timeout 6 --verify-timeout 1 --between-cycles 1";
         }
         if (skipSupportEmployeeCheck)
         {
@@ -643,6 +658,10 @@ public partial class MainViewModel : ViewModelBase
 
             _currentRunSpent = ParseAmount(match.Groups[1].Value);
             SpentSoFar = FormatAmount(_sessionSpent + _currentRunSpent);
+            if (line.Contains("Target reached:", StringComparison.OrdinalIgnoreCase))
+            {
+                _automationReachedTarget = true;
+            }
             return;
         }
     }

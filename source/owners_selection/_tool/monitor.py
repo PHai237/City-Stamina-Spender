@@ -51,9 +51,6 @@ CLAIM_COST_12_TEMPLATE = cv2.imread(
 CLAIM_COST_8_TEMPLATE = cv2.imread(
     str(WORKSPACE / "loop_assets/claim_cost_8.png"), cv2.IMREAD_GRAYSCALE
 )
-CLAIM_COST_0_TEMPLATE = cv2.imread(
-    str(WORKSPACE / "loop_assets/claim_cost_0.png"), cv2.IMREAD_GRAYSCALE
-)
 DEBUG_DIR = WORKSPACE / "gameplay_exit_debug"
 REVENUE_SAMPLE_DIR = WORKSPACE / "revenue_samples"
 REVENUE_DIGIT_DIR = WORKSPACE / "loop_assets/revenue_digits"
@@ -361,10 +358,6 @@ def click_claim_if_visible(target: dict) -> bool:
 
 def detect_claim_cost(claim_area: np.ndarray) -> int:
     cost_scores: list[tuple[int, float]] = []
-    if CLAIM_COST_0_TEMPLATE is not None:
-        match_0 = find_template_multiscale(claim_area, CLAIM_COST_0_TEMPLATE, 0.0)
-        if match_0:
-            cost_scores.append((0, match_0[3]))
     if CLAIM_COST_12_TEMPLATE is not None:
         match_12 = find_template_multiscale(claim_area, CLAIM_COST_12_TEMPLATE, 0.0)
         if match_12:

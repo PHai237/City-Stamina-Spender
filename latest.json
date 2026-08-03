@@ -1,5 +1,5 @@
 {
-  "version": "1.2.8",
-  "url": "https://github.com/PHai237/City-Stamina-Spender/releases/download/v1.2.8/City.Stamina.Spender.Update.zip",
-  "notes": "More reliable updater downloads with retry support."
+  "version": "1.2.9",
+  "url": "https://github.com/PHai237/City-Stamina-Spender/releases/download/v1.2.9/City.Stamina.Spender.exe",
+  "notes": "Stage 1-1 detection fixes and F5 run/stop hotkey."
 }

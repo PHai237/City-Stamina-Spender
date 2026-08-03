@@ -10,6 +10,7 @@ import cv2
 import numpy as np
 
 from play import (
+    capture_client_band_color,
     capture_region,
     find_nte_window,
     find_template_multiscale,
@@ -33,6 +34,12 @@ DEFAULT_SCAN_REGION = {"left": 220, "top": 80, "width": 1040, "height": 560}
 # chairs, table edges, and food props that look close enough to create false
 # positives, especially for sandwich/croissant.
 ORDER_SCAN_REGION = {"left": 24, "top": 48, "width": 984, "height": 265}
+ORDER_SCAN_RATIOS = {
+    "left": 0.0,
+    "top": 0.045,
+    "right": 0.985,
+    "bottom": 0.49,
+}
 
 
 def load_tuning() -> dict:
@@ -100,20 +107,25 @@ ITEM_TEMPLATES = [
 ]
 
 ORDER_TEMPLATES = [
-    ItemTemplate(1, "black_coffee", "Black coffee", ORDER_ASSET_DIR / "01_black_coffee_order_icon.png", 0.72),
-    ItemTemplate(2, "white_coffee", "White coffee", ORDER_ASSET_DIR / "02_white_coffee_order_icon.png", 0.70),
-    ItemTemplate(3, "sandwich", "Sandwich", ORDER_ASSET_DIR / "03_sandwich_order_icon.png"),
+    ItemTemplate(1, "black_coffee", "Black coffee", ORDER_ASSET_DIR / "01_black_coffee_order_icon.png", 0.82),
+    ItemTemplate(2, "white_coffee", "White coffee", ORDER_ASSET_DIR / "02_white_coffee_order_icon.png", 0.84),
+    ItemTemplate(3, "sandwich", "Sandwich", ORDER_ASSET_DIR / "03_sandwich_order_icon.png", 0.84),
     ItemTemplate(4, "croissant", "Croissant", ORDER_ASSET_DIR / "04_croissant_order_icon.png", 0.90),
     ItemTemplate(5, "cupcake", "Cupcake", ORDER_ASSET_DIR / "05_cupcake_order_icon.png"),
     ItemTemplate(6, "tomato_juice", "Tomato juice", ORDER_ASSET_DIR / "06_tomato_juice_order_icon.png", 0.80, 0.03),
     ItemTemplate(6, "tomato_juice_bubble", "Tomato juice", ORDER_ASSET_DIR / "06_tomato_juice_order.png", 0.72, 0.08),
 ]
+TEMPLATE_CACHE: dict[Path, np.ndarray | None] = {}
 
 
 def load_item_template(item: ItemTemplate) -> np.ndarray | None:
+    if item.path in TEMPLATE_CACHE:
+        return TEMPLATE_CACHE[item.path]
+
     template = cv2.imread(str(item.path), cv2.IMREAD_GRAYSCALE)
     if template is None:
         log(f"Stage 1-1 item template missing item={item.key} path={item.path}")
+    TEMPLATE_CACHE[item.path] = template
     return template
 
 
@@ -261,10 +273,9 @@ def classify_order_circle(
             continue
 
         base_threshold = effective_threshold(item, threshold)
-        if item.item_id == 4:
-            # Croissant is visually close to several NPC/clothing highlights.
-            # Do not relax it inside the order-circle pass, otherwise tomato
-            # bubbles can produce false croissant orders below the bubble.
+        if item.item_id in (1, 2, 3, 4):
+            # Coffee and bread icons are easy to confuse in grayscale. Keep
+            # these strict; a missed frame is better than serving the wrong item.
             circle_threshold = base_threshold
         else:
             circle_threshold = max(0.62, base_threshold - 0.10)
@@ -475,6 +486,22 @@ def detect_items(
     return detect_templates(client, ITEM_TEMPLATES, region or DEFAULT_SCAN_REGION, threshold)
 
 
+def capture_order_scan_image(
+    client: dict[str, int],
+    region: dict[str, int] | None,
+) -> np.ndarray:
+    if region is not None:
+        return capture_region(client, region, "left")
+    image, _ = capture_client_band_color(
+        client,
+        ORDER_SCAN_RATIOS["left"],
+        ORDER_SCAN_RATIOS["top"],
+        ORDER_SCAN_RATIOS["right"],
+        ORDER_SCAN_RATIOS["bottom"],
+    )
+    return cv2.cvtColor(image, cv2.COLOR_BGR2GRAY)
+
+
 def detect_order_bubbles(
     client: dict[str, int],
     region: dict[str, int] | None = None,
@@ -484,13 +511,35 @@ def detect_order_bubbles(
 ) -> tuple[np.ndarray, list[ItemMatch]]:
     order_templates = templates or ORDER_TEMPLATES
     threshold = tuned_order_threshold(threshold)
-    image = capture_region(client, region or tuned_order_region(), "left")
+    tuned_region = region
+    if tuned_region is None and "order_scan_region" in load_tuning():
+        tuned_region = tuned_order_region()
+    image = capture_order_scan_image(client, tuned_region)
     circle_matches = detect_order_circles(image, client, order_templates, threshold)
     if circle_matches:
         return image, circle_matches
 
     # Fallback for unusual frames where the bubble rim is hidden or Hough misses.
-    _, template_matches = detect_templates(client, order_templates, region or tuned_order_region(), threshold, multi)
+    if tuned_region is None:
+        template_matches: list[ItemMatch] = []
+        for item in order_templates:
+            template = load_item_template(item)
+            if template is None:
+                continue
+            template_matches.extend(
+                find_template_multiscale_all(
+                    image,
+                    template,
+                    item,
+                    effective_threshold(item, threshold),
+                    scales=candidate_scales(client, item),
+                    max_per_scale=8 if multi else 2,
+                )
+            )
+        template_matches = suppress_overlapping_matches(template_matches, overlap_threshold=0.45)
+        template_matches.sort(key=lambda match: (match.y, match.x))
+    else:
+        _, template_matches = detect_templates(client, order_templates, tuned_region, threshold, multi)
     return image, template_matches
 
 

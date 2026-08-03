@@ -12,6 +12,7 @@ from stage_1_1_orders import (
     ItemMatch,
     ORDER_TEMPLATES,
     detect_order_bubbles,
+    load_item_template,
     match_conflicts,
     save_debug,
 )
@@ -96,13 +97,16 @@ def should_exit_after_order(
     if tomato_juice_served >= 2:
         runner_log(f"ORDER_EXIT_RULE tomato_juice={tomato_juice_served} handled={handled}")
         return True, None, "2 tomato juice orders"
-    if handled < 3:
+
+    if handled < 2:
         return False, None, ""
 
     revenue_value = read_revenue(target)
     if revenue_value is None:
         runner_log(f"ORDER_REVENUE_UNREADABLE order={handled} goal={revenue_goal}")
-        return True, None, "3 orders served"
+        if handled >= 3:
+            return True, None, "3 orders served"
+        return False, None, ""
     runner_log(f"ORDER_REVENUE value={revenue_value} goal={revenue_goal}")
     if revenue_value >= revenue_goal:
         return True, revenue_value, f"revenue {revenue_value}/{revenue_goal}"
@@ -112,6 +116,11 @@ def should_exit_after_order(
 def wait_for_ready_overlay() -> None:
     runner_log("ORDER_READY_WAIT")
     time.sleep(READY_OVERLAY_SECONDS)
+
+
+def warm_order_templates() -> None:
+    for template in ORDER_TEMPLATES:
+        load_item_template(template)
 
 
 def capture_orders(
@@ -139,11 +148,18 @@ def save_order_scan(
     samples.save(scans, order_image, matches, handled)
 
 
+def filter_recent_order(matches: list[ItemMatch], recent: ItemMatch | None) -> list[ItemMatch]:
+    if recent is None:
+        return matches
+    return [match for match in matches if not same_visible_order(recent, match)]
+
+
 def prewarm_until_order(
     actions: StageOneOneActions,
     target: dict,
     threshold: float,
     samples: SampleRing,
+    ignore_recent: ItemMatch | None = None,
 ) -> tuple[bool, int, Any | None, list[ItemMatch]]:
     if not actions.refresh_target():
         return False, 0, None, []
@@ -160,12 +176,21 @@ def prewarm_until_order(
     )
     scans = 0
     for name, step in steps:
+        order_image, matches = capture_orders(target, threshold)
+        matches = filter_recent_order(matches, ignore_recent)
+        scans += 1
+        save_order_scan(order_image, matches, samples, scans, 0)
+        if matches:
+            runner_log(f"ORDER_STATION_PREP_INTERRUPTED name={name} matches={len(matches)} before_step=1")
+            return True, scans, order_image, matches
+
         runner_log(f"ORDER_STATION_PREP name={name}")
         if not step():
             return False, scans, None, []
         refreshed = find_nte_window() or target
         target.update(refreshed)
         order_image, matches = capture_orders(target, threshold)
+        matches = filter_recent_order(matches, ignore_recent)
         scans += 1
         save_order_scan(order_image, matches, samples, scans, 0)
         if matches:
@@ -221,6 +246,7 @@ def run_stage_1_1(
     stations_ready = False
 
     runner_log(f"ORDER_RUNNER_STARTED revenue_goal={revenue_goal}")
+    warm_order_templates()
     wait_for_ready_overlay()
     actions = StageOneOneActions()
     runner_log("ORDER_STATIONS_PREPARING")
@@ -272,6 +298,7 @@ def run_stage_1_1(
                     target,
                     threshold,
                     samples,
+                    last_handled_match,
                 )
                 scans += prep_scans
                 if not prepared:
@@ -361,6 +388,7 @@ def run_stage_1_1(
                 target,
                 threshold,
                 samples,
+                match,
             )
             scans += prep_scans
             if not prepared:
@@ -372,8 +400,8 @@ def run_stage_1_1(
             else:
                 runner_log("ORDER_STATIONS_READY")
         last_handled_match = match
-        last_handled_until = time.monotonic() + max(1.0, cooldown * 3.0)
-        time.sleep(max(0.06, cooldown * 0.5))
+        last_handled_until = time.monotonic() + max(0.22, cooldown * 1.4)
+        time.sleep(max(0.03, cooldown * 0.3))
 
     runner_log(f"ORDER_RUNNER_TIMEOUT handled={handled} revenue={last_revenue_value}")
     # Do not exit/claim on timeout: Stage 1-1 must only finish after revenue is
