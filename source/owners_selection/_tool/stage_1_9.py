@@ -461,13 +461,11 @@ def main() -> int:
             print(f"  Line {next_line}: Owner's Selection was not found, stopping.")
             log("Loop stopped because Owner's Selection was not found")
             return 6
-        # Temporarily disabled for Stage 1-1/low-stamina testing. Keep
-        # energy_is_empty() intact so this guard can be restored quickly.
-        # if energy_is_empty():
-        #     print(f"  Line {next_line}: City Stamina is 0/700, stopping.")
-        #     log("Loop stopped because energy is 0/700")
-        #     stopped_by_energy = True
-        #     break
+        if energy_is_empty():
+            print(f"  Line {next_line}: City Stamina is 0/700, stopping.")
+            log("Loop stopped because energy is 0/700")
+            stopped_by_energy = True
+            break
         if compact_output:
             log("Owner's Selection ready and energy is available")
         result, spent, next_line = run_cycle(
@@ -489,13 +487,10 @@ def main() -> int:
                 next_line += 1
                 log(f"Loop cycle {cycle} missing spent marker; fallback spent={spent}")
             if spent <= 0:
-                # Temporarily allow 0-cost claims while testing Stage 1-1 with
-                # empty City Stamina. Count the fallback so the test loop can
-                # finish instead of getting stuck forever at 0/target.
-                spent = args.min_spend_per_cycle
-                print(f"  Line {next_line}: Claim cost was 0, using test fallback {spent}.")
-                next_line += 1
-                log(f"Loop test fallback because spent marker was 0; fallback spent={spent}")
+                print(f"  Line {next_line}: City Stamina was not spent, stopping.")
+                log(f"Loop stopped because spent marker was {spent}")
+                stopped_by_zero_spent = True
+                break
             spent_total += spent
             print(
                 f"  Line {next_line}: Spent {spent} City Stamina. "
