@@ -20,10 +20,11 @@ const state = {
   isDetailVisible: false,
   isRunning: false,
   stageDropdownOpen: false,
-  currentVersion: "1.2.10",
-  latestVersion: "1.2.10",
+  currentVersion: "1.2.11",
+  latestVersion: "1.2.11",
   updateState: "checking",
   updateMessage: "Checking for updates...",
+  updateProgress: 0,
   isUpdateAvailable: false,
 };
 
@@ -80,8 +81,15 @@ function header() {
       ? "pending"
       : "latest";
   const indicatorText = state.updateState === "latest" ? "OK" : "!";
-  const updateText = state.updateState === "updating" ? "Updating..." : "Update";
-  const showUpdatePopup = state.updateState === "available" || state.updateState === "error";
+  const updateText = state.updateState === "updating"
+    ? `${Math.max(0, Math.min(100, Number(state.updateProgress) || 0))}%`
+    : "Update";
+  const showUpdatePopup = state.updateState === "available" || state.updateState === "error" || state.updateState === "updating";
+  const updateTitle = state.updateState === "available"
+    ? "Update available"
+    : state.updateState === "updating"
+      ? "Updating"
+      : "Update check failed";
 
   return `
     <div class="topbar">
@@ -98,9 +106,14 @@ function header() {
           <button id="updateButton" class="update-button">${escapeHtml(updateText)}</button>
           <button id="updateIndicator" class="update-indicator ${indicatorClass}" title="${escapeHtml(state.updateMessage)}">${indicatorText}</button>
           ${showUpdatePopup ? `
-            <div class="update-popover">
-              <div class="update-popover-title">${state.updateState === "available" ? "Update available" : "Update check failed"}</div>
+            <div class="update-popover ${state.updateState === "updating" ? "updating" : ""}">
+              <div class="update-popover-title">${escapeHtml(updateTitle)}</div>
               <div class="update-popover-text">${escapeHtml(state.updateMessage)}</div>
+              ${state.updateState === "updating" ? `
+                <div class="update-progress-track">
+                  <div class="update-progress-fill" style="width:${Math.max(0, Math.min(100, Number(state.updateProgress) || 0))}%"></div>
+                </div>
+              ` : ""}
               ${state.updateState === "available" ? `<div class="update-popover-meta">Current ${escapeHtml(state.currentVersion)} -> ${escapeHtml(state.latestVersion)}</div>` : ""}
             </div>
           ` : ""}

@@ -260,6 +260,34 @@ button {
   margin-bottom: 5px;
 }
 
+.update-popover.updating {
+  border-color: rgba(62, 207, 178, 0.28);
+}
+
+.update-popover.updating::before {
+  border-left-color: rgba(62, 207, 178, 0.28);
+  border-top-color: rgba(62, 207, 178, 0.28);
+}
+
+.update-popover.updating .update-popover-title {
+  color: var(--primary);
+}
+
+.update-progress-track {
+  height: 6px;
+  margin-top: 9px;
+  overflow: hidden;
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.08);
+}
+
+.update-progress-fill {
+  height: 100%;
+  border-radius: inherit;
+  background: var(--primary);
+  transition: width 120ms ease;
+}
+
 .update-popover-text,
 .update-popover-meta {
   color: var(--soft);

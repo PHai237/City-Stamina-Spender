@@ -1,5 +1,5 @@
 {
-  "version": "1.2.10",
-  "url": "https://github.com/PHai237/City-Stamina-Spender/releases/download/v1.2.10/City.Stamina.Spender.exe",
-  "notes": "Restore production City Stamina guards for tester builds."
+  "version": "1.2.11",
+  "url": "https://github.com/PHai237/City-Stamina-Spender/releases/download/v1.2.11/City.Stamina.Spender.exe",
+  "notes": "Show updater download progress and improve update feedback."
 }

@@ -19,7 +19,7 @@ namespace CityStamina.Avalonia.ViewModels;
 
 public partial class MainViewModel : ViewModelBase
 {
-    public const string AppVersion = "1.2.10";
+    public const string AppVersion = "1.2.11";
     private const string LatestManifestUrl = "https://raw.githubusercontent.com/PHai237/City-Stamina-Spender/main/latest.json";
     private const string StageOneNine = "Stage 1-9";
     private const string StageOneOne = "Stage 1-1";
@@ -138,6 +138,9 @@ public partial class MainViewModel : ViewModelBase
 
     [ObservableProperty]
     private string _updateMessage = "Checking for updates...";
+
+    [ObservableProperty]
+    private int _updateProgress;
 
     public bool IsUpdateAvailable => UpdateState == "available";
 
@@ -297,6 +300,7 @@ public partial class MainViewModel : ViewModelBase
         {
             UpdateState = "checking";
             UpdateMessage = "Checking for updates...";
+            UpdateProgress = 0;
 
             using var client = CreateHttpClient();
             var manifestUrl = LatestManifestUrl + "?t=" + DateTimeOffset.UtcNow.ToUnixTimeSeconds().ToString(CultureInfo.InvariantCulture);
@@ -318,21 +322,29 @@ public partial class MainViewModel : ViewModelBase
 
             UpdateState = "latest";
             UpdateMessage = "You are on the latest version.";
+            UpdateProgress = 100;
         }
         catch
         {
             UpdateState = "error";
             UpdateMessage = "Could not check updates.";
+            UpdateProgress = 0;
         }
     }
 
     [RelayCommand]
     private async Task UpdateAsync()
     {
+        if (UpdateState == "updating")
+        {
+            return;
+        }
+
         if (IsRunning)
         {
             UpdateState = "error";
             UpdateMessage = "Stop the automation before updating.";
+            UpdateProgress = 0;
             return;
         }
 
@@ -349,6 +361,7 @@ public partial class MainViewModel : ViewModelBase
         {
             UpdateState = "updating";
             UpdateMessage = $"Downloading version {LatestVersion}...";
+            UpdateProgress = 0;
 
             var tempDir = Path.Combine(Path.GetTempPath(), "CityStaminaUpdate_" + Guid.NewGuid().ToString("N"));
             Directory.CreateDirectory(tempDir);
@@ -356,11 +369,17 @@ public partial class MainViewModel : ViewModelBase
             var downloadPath = Path.Combine(tempDir, isExeUpdate ? "City Stamina Spender.exe" : "update.zip");
 
             using var client = CreateHttpClient();
-            await DownloadFileWithRetryAsync(client, _latestDownloadUrl, downloadPath);
+            await DownloadFileWithRetryAsync(client, _latestDownloadUrl, downloadPath, progress =>
+            {
+                UpdateProgress = Math.Clamp(progress, 0, 95);
+                UpdateMessage = $"Downloading version {LatestVersion}: {UpdateProgress}%";
+            });
 
             string? sourceDir = null;
             if (!isExeUpdate)
             {
+                UpdateProgress = 96;
+                UpdateMessage = "Preparing update...";
                 var extractDir = Path.Combine(tempDir, "extract");
                 Directory.CreateDirectory(extractDir);
                 ZipFile.ExtractToDirectory(downloadPath, extractDir, overwriteFiles: true);
@@ -377,6 +396,9 @@ public partial class MainViewModel : ViewModelBase
                 " -Pid " + Environment.ProcessId.ToString(CultureInfo.InvariantCulture) +
                 " -Temp " + Quote(tempDir);
 
+            UpdateProgress = 100;
+            UpdateMessage = "Installing update...";
+
             Process.Start(new ProcessStartInfo
             {
                 FileName = "powershell",
@@ -392,6 +414,7 @@ public partial class MainViewModel : ViewModelBase
         {
             UpdateState = "error";
             UpdateMessage = "Update failed: " + ToUserFriendlyUpdateError(ex);
+            UpdateProgress = 0;
         }
     }
 
@@ -802,7 +825,7 @@ public partial class MainViewModel : ViewModelBase
         return client;
     }
 
-    private static async Task DownloadFileWithRetryAsync(HttpClient client, string url, string destinationPath)
+    private static async Task DownloadFileWithRetryAsync(HttpClient client, string url, string destinationPath, Action<int>? reportProgress = null)
     {
         Exception? lastError = null;
         for (var attempt = 1; attempt <= 4; attempt++)
@@ -817,6 +840,11 @@ public partial class MainViewModel : ViewModelBase
                 using var response = await client.GetAsync(url, HttpCompletionOption.ResponseHeadersRead);
                 response.EnsureSuccessStatusCode();
 
+                var totalBytes = response.Content.Headers.ContentLength;
+                long downloadedBytes = 0;
+                var lastProgress = -1;
+                reportProgress?.Invoke(0);
+
                 await using var source = await response.Content.ReadAsStreamAsync();
                 await using var target = new FileStream(
                     destinationPath,
@@ -826,13 +854,36 @@ public partial class MainViewModel : ViewModelBase
                     bufferSize: 1024 * 128,
                     useAsync: true
                 );
-                await source.CopyToAsync(target);
+
+                var buffer = new byte[1024 * 128];
+                while (true)
+                {
+                    var bytesRead = await source.ReadAsync(buffer);
+                    if (bytesRead <= 0)
+                    {
+                        break;
+                    }
+
+                    await target.WriteAsync(buffer.AsMemory(0, bytesRead));
+                    downloadedBytes += bytesRead;
+
+                    if (totalBytes is > 0)
+                    {
+                        var progress = (int)Math.Floor(downloadedBytes * 100d / totalBytes.Value);
+                        if (progress != lastProgress)
+                        {
+                            lastProgress = progress;
+                            reportProgress?.Invoke(progress);
+                        }
+                    }
+                }
 
                 if (new FileInfo(destinationPath).Length <= 0)
                 {
                     throw new IOException("Downloaded file is empty.");
                 }
 
+                reportProgress?.Invoke(100);
                 return;
             }
             catch (Exception ex) when (ex is HttpRequestException or IOException or TaskCanceledException)
@@ -843,6 +894,7 @@ public partial class MainViewModel : ViewModelBase
                     break;
                 }
 
+                reportProgress?.Invoke(0);
                 await Task.Delay(TimeSpan.FromSeconds(attempt * 2));
             }
         }

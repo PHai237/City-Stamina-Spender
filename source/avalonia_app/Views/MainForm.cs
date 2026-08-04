@@ -237,6 +237,7 @@ public sealed class MainForm : Form
             latestVersion = _viewModel.LatestVersion,
             updateState = _viewModel.UpdateState,
             updateMessage = _viewModel.UpdateMessage,
+            updateProgress = _viewModel.UpdateProgress,
             isUpdateAvailable = _viewModel.IsUpdateAvailable,
         };
 
