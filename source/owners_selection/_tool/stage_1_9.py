@@ -318,6 +318,7 @@ def start_play_cycle(
     stage: str = "1-9",
     skip_support_employee_check: bool = False,
     verify_timeout: float | None = None,
+    extra_args: list[str] | None = None,
 ) -> tuple[Iterator[str], Callable[[], int]]:
     output_queue: "queue.Queue[str | None]" = queue.Queue()
     result_holder = {"code": 1}
@@ -332,6 +333,8 @@ def start_play_cycle(
                 sys.argv.extend(["--verify-timeout", str(verify_timeout)])
             if skip_support_employee_check:
                 sys.argv.append("--skip-support-employee-check")
+            if extra_args:
+                sys.argv.extend(extra_args)
             with contextlib.redirect_stdout(writer), contextlib.redirect_stderr(writer):
                 result_holder["code"] = play_main()
         except Exception as exc:
@@ -357,6 +360,49 @@ def start_play_cycle(
         return result_holder["code"]
 
     return queued_lines(), wait_for_thread
+
+
+def run_stage_1_1_calibration(owner_timeout: float, verify_timeout: float | None) -> int:
+    print("Run 0: Calibrating Stage 1-1 order area.")
+    print("  Line 1: Looking for stage 1-1.")
+    if not wait_for_owner_selection(owner_timeout):
+        print("  Line 2: Owner's Selection was not found, stopping.")
+        return 6
+
+    child_lines, wait_for_child = start_play_cycle(
+        "1-1",
+        skip_support_employee_check=True,
+        verify_timeout=verify_timeout,
+        extra_args=["--stage-1-1-calibrate-run"],
+    )
+    line_number = 2
+
+    def emit(message: str) -> None:
+        nonlocal line_number
+        print(f"  Line {line_number}: {message}")
+        line_number += 1
+
+    for line in child_lines:
+        stripped = line.rstrip()
+        log(f"calibration stdout: {stripped}")
+        if "Da bam Open Shop." in line:
+            emit("Stage 1-1 found, clicked Open Shop.")
+        elif stripped.startswith("CALIBRATION_FULL_IMAGE="):
+            emit("Saved full calibration screenshot.")
+        elif stripped.startswith("CALIBRATION_ORDER_CROP="):
+            emit("Saved order-area crop.")
+        elif stripped.startswith("CALIBRATION_MATCHES="):
+            value = stripped.split("=", 1)[1].strip()
+            emit(f"Calibration saw {value} visible orders.")
+        elif stripped.startswith("CALIBRATION_CONFIG="):
+            emit("Saved order detector calibration.")
+        elif stripped == "CALIBRATION_EXIT_CLICKED":
+            emit("Calibration finished, exiting stage.")
+
+    result = wait_for_child()
+    if result != 0:
+        emit("Calibration failed.")
+    return result
 
 
 def main() -> int:
@@ -390,6 +436,7 @@ def main() -> int:
     parser.add_argument("--skip-support-employee-check", action="store_true", help=argparse.SUPPRESS)
     parser.add_argument("--no-admin-relaunch", action="store_true", help=argparse.SUPPRESS)
     parser.add_argument("--tune-stage-1-1", action="store_true", help=argparse.SUPPRESS)
+    parser.add_argument("--stage-1-1-calibrate-run", action="store_true", help=argparse.SUPPRESS)
     parser.add_argument("--elevated-child", action="store_true", help=argparse.SUPPRESS)
     args = parser.parse_args()
 
@@ -421,6 +468,9 @@ def main() -> int:
             print("Opened an elevated helper. The current process will stop.")
             return 7
         return 4
+
+    if args.stage_1_1_calibrate_run:
+        return run_stage_1_1_calibration(args.owner_timeout, args.verify_timeout)
 
     if spend_target is not None:
         log(

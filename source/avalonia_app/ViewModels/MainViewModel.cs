@@ -19,7 +19,7 @@ namespace CityStamina.Avalonia.ViewModels;
 
 public partial class MainViewModel : ViewModelBase
 {
-    public const string AppVersion = "1.2.11";
+    public const string AppVersion = "1.2.12";
     private const string LatestManifestUrl = "https://raw.githubusercontent.com/PHai237/City-Stamina-Spender/main/latest.json";
     private const string StageOneNine = "Stage 1-9";
     private const string StageOneOne = "Stage 1-1";
@@ -96,6 +96,9 @@ public partial class MainViewModel : ViewModelBase
 
     [ObservableProperty]
     private string _ordersDone = "0";
+
+    [ObservableProperty]
+    private string _calibrationStatus = "Not calibrated";
 
     [ObservableProperty]
     private string _logText = "";
@@ -184,6 +187,10 @@ public partial class MainViewModel : ViewModelBase
         SpentSoFar = FormatAmount(_sessionSpent);
         OrdersDetected = "0 / 0";
         OrdersDone = "0";
+        if (SelectedStageArg == "1-1")
+        {
+            CalibrationStatus = "Waiting";
+        }
         StartElapsedTimer();
 
         try
@@ -223,6 +230,26 @@ public partial class MainViewModel : ViewModelBase
             if (_stopRequested)
             {
                 return;
+            }
+
+            if (SelectedStageArg == "1-1")
+            {
+                using var calibrationProcess = StartOwnerCalibrationProcess();
+                var calibrationExitCode = await RunTrackedProcessAsync(
+                    calibrationProcess,
+                    HandleAutomationLine,
+                    showErrorsInUi: true
+                );
+                if (_stopRequested)
+                {
+                    AppendLog("Stopped.");
+                    return;
+                }
+                if (calibrationExitCode != 0)
+                {
+                    AppendLog($"Calibration failed with code {calibrationExitCode}.");
+                    return;
+                }
             }
 
             using var process = StartOwnerProcess(amount, SelectedStageArg, skipSupportEmployeeCheck: true);
@@ -512,6 +539,17 @@ public partial class MainViewModel : ViewModelBase
         return StartProcess(command.FileName, command.Arguments, _ownerToolDir);
     }
 
+    private Process StartOwnerCalibrationProcess()
+    {
+        var arguments = "1 --stage 1-1 --stage-1-1-calibrate-run --no-admin-relaunch --owner-timeout 6 --verify-timeout 1 --between-cycles 1 --skip-support-employee-check";
+        var command = ResolveOwnerCommand(arguments);
+        WriteWrapperDebug(
+            "wrapper",
+            $"Starting owner calibration mode={(command.UsesPythonSource ? "source" : "packaged")} stage=1-1"
+        );
+        return StartProcess(command.FileName, command.Arguments, _ownerToolDir);
+    }
+
     private async Task<int> RunProcessToLogAsync(
         string fileName,
         string arguments,
@@ -636,6 +674,12 @@ public partial class MainViewModel : ViewModelBase
 
         if (line.StartsWith("ORDER_", StringComparison.OrdinalIgnoreCase))
         {
+            return;
+        }
+
+        if (line.StartsWith("CALIBRATION_", StringComparison.OrdinalIgnoreCase))
+        {
+            UpdateCalibrationStatusFromLog(line);
             return;
         }
 
@@ -823,6 +867,28 @@ public partial class MainViewModel : ViewModelBase
         var client = new HttpClient { Timeout = TimeSpan.FromMinutes(5) };
         client.DefaultRequestHeaders.UserAgent.ParseAdd("City-Stamina-Spender/" + AppVersion);
         return client;
+    }
+
+    private void UpdateCalibrationStatusFromLog(string line)
+    {
+        if (line.StartsWith("CALIBRATION_ORDER_CROP=", StringComparison.OrdinalIgnoreCase))
+        {
+            CalibrationStatus = "Order crop saved";
+        }
+        else if (line.StartsWith("CALIBRATION_MATCHES=", StringComparison.OrdinalIgnoreCase))
+        {
+            var parts = line.Split('=', 2);
+            var value = parts.Length == 2 ? parts[1].Trim() : "0";
+            CalibrationStatus = $"Visible orders: {value}";
+        }
+        else if (line.StartsWith("CALIBRATION_CONFIG=", StringComparison.OrdinalIgnoreCase))
+        {
+            CalibrationStatus = "Ready";
+        }
+        else if (line.StartsWith("CALIBRATION_ERROR=", StringComparison.OrdinalIgnoreCase))
+        {
+            CalibrationStatus = "Failed";
+        }
     }
 
     private static async Task DownloadFileWithRetryAsync(HttpClient client, string url, string destinationPath, Action<int>? reportProgress = null)

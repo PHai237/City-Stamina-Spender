@@ -223,6 +223,7 @@ public sealed class MainForm : Form
             elapsed = _viewModel.Elapsed,
             ordersDetected = _viewModel.OrdersDetected,
             ordersDone = _viewModel.OrdersDone,
+            calibrationStatus = _viewModel.CalibrationStatus,
             logText = _viewModel.LogText,
             searchQuery = _viewModel.SearchQuery,
             automationCount = _viewModel.AutomationCount,

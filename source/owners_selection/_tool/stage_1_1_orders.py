@@ -68,6 +68,24 @@ def tuned_order_region() -> dict[str, int]:
         return ORDER_SCAN_REGION
 
 
+def tuned_order_ratios() -> dict[str, float] | None:
+    ratios = load_tuning().get("order_scan_ratios")
+    if not isinstance(ratios, dict):
+        return None
+    try:
+        left = float(ratios["left"])
+        top = float(ratios["top"])
+        right = float(ratios["right"])
+        bottom = float(ratios["bottom"])
+    except Exception:
+        return None
+    left = min(0.95, max(0.0, left))
+    top = min(0.95, max(0.0, top))
+    right = min(1.0, max(left + 0.05, right))
+    bottom = min(1.0, max(top + 0.05, bottom))
+    return {"left": left, "top": top, "right": right, "bottom": bottom}
+
+
 def tuned_order_threshold(default: float = DEFAULT_ORDER_THRESHOLD) -> float:
     value = load_tuning().get("order_threshold")
     try:
@@ -492,6 +510,16 @@ def capture_order_scan_image(
 ) -> np.ndarray:
     if region is not None:
         return capture_region(client, region, "left")
+    ratios = tuned_order_ratios()
+    if ratios is not None:
+        image, _ = capture_client_band_color(
+            client,
+            ratios["left"],
+            ratios["top"],
+            ratios["right"],
+            ratios["bottom"],
+        )
+        return cv2.cvtColor(image, cv2.COLOR_BGR2GRAY)
     image, _ = capture_client_band_color(
         client,
         ORDER_SCAN_RATIOS["left"],
@@ -512,7 +540,8 @@ def detect_order_bubbles(
     order_templates = templates or ORDER_TEMPLATES
     threshold = tuned_order_threshold(threshold)
     tuned_region = region
-    if tuned_region is None and "order_scan_region" in load_tuning():
+    tuning = load_tuning()
+    if tuned_region is None and "order_scan_region" in tuning and "order_scan_ratios" not in tuning:
         tuned_region = tuned_order_region()
     image = capture_order_scan_image(client, tuned_region)
     circle_matches = detect_order_circles(image, client, order_templates, threshold)

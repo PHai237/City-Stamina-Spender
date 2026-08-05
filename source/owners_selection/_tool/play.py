@@ -1007,6 +1007,11 @@ def open_shop_and_monitor(target: dict, args: argparse.Namespace) -> int:
     print(f"Da xac minh giao dien {args.stage}. Dang bam Open Shop...")
     print("Da bam Open Shop.")
     if args.stage == "1-1":
+        if args.stage_1_1_calibrate_run:
+            print("Dang calibrate vung order stage 1-1...")
+            from stage_1_1_tuner import run_open_shop_calibration
+
+            return run_open_shop_calibration(exit_after=True)
         print("Dang xu ly order stage 1-1...")
         human_sleep(0.25, 0.08)
         from stage_1_1_runner import run_stage_1_1
@@ -1116,6 +1121,7 @@ def main() -> int:
     parser.add_argument("--stage-1-1-threshold", type=float, default=0.82, help=argparse.SUPPRESS)
     parser.add_argument("--stage-1-1-cooldown", type=float, default=0.18, help=argparse.SUPPRESS)
     parser.add_argument("--stage-1-1-revenue-goal", type=int, default=100, help=argparse.SUPPRESS)
+    parser.add_argument("--stage-1-1-calibrate-run", action="store_true", help=argparse.SUPPRESS)
     parser.add_argument("--skip-support-employee-check", action="store_true", help=argparse.SUPPRESS)
     parser.add_argument("--open-support-only", action="store_true", help=argparse.SUPPRESS)
     parser.add_argument("--select-stage-only", action="store_true", help=argparse.SUPPRESS)

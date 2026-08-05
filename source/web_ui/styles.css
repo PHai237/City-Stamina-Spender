@@ -827,6 +827,37 @@ button {
   display: grid;
 }
 
+.calibration-corner {
+  position: absolute;
+  right: 0;
+  bottom: 0;
+  width: 176px;
+  min-height: 58px;
+  display: grid;
+  align-content: center;
+  gap: 5px;
+  padding: 10px 12px;
+  border-top: 1px solid var(--border);
+  border-left: 1px solid var(--border);
+  border-radius: 12px 0 8px 0;
+  background: rgba(15, 23, 42, 0.96);
+  box-shadow: -12px -12px 30px rgba(0, 0, 0, 0.18);
+}
+
+.calibration-corner span {
+  color: var(--muted-foreground);
+  font-family: Consolas, "SFMono-Regular", monospace;
+  font-size: 9px;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+}
+
+.calibration-corner strong {
+  color: var(--primary);
+  font-size: 12px;
+  line-height: 1.25;
+}
+
 .empty-log {
   color: var(--muted);
 }

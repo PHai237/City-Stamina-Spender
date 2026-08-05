@@ -9,6 +9,7 @@ const state = {
   elapsed: "00:00",
   ordersDetected: "0 / 0",
   ordersDone: "0",
+  calibrationStatus: "Not calibrated",
   logText: "",
   searchQuery: "",
   automationCount: "1",
@@ -20,8 +21,8 @@ const state = {
   isDetailVisible: false,
   isRunning: false,
   stageDropdownOpen: false,
-  currentVersion: "1.2.11",
-  latestVersion: "1.2.11",
+  currentVersion: "1.2.12",
+  latestVersion: "1.2.12",
   updateState: "checking",
   updateMessage: "Checking for updates...",
   updateProgress: 0,
@@ -281,6 +282,12 @@ function logPanel() {
       </div>
       <div class="log-wrap">
         <div id="logBox" class="log-box">${body}</div>
+        ${state.selectedStage === "Stage 1-1" ? `
+          <div class="calibration-corner">
+            <span>Calibration</span>
+            <strong>${escapeHtml(state.calibrationStatus)}</strong>
+          </div>
+        ` : ""}
       </div>
     </div>
   `;
