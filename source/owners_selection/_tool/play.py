@@ -37,6 +37,7 @@ BASE_WIDTH = 1280
 BASE_HEIGHT = 720
 LIST_REGION = {"left": 8, "top": 82, "width": 214, "height": 606}
 LIST_MOUSE_POINT = (110, 360)
+STAGE_1_1_TOP_ROW_POINT = (110, 123)
 TITLE_REGION = {"left": 245, "top": 80, "width": 760, "height": 80}
 OWNER_REGION = {"left": 10, "top": 5, "width": 280, "height": 65}
 OWNER_THRESHOLD = 0.60
@@ -448,6 +449,28 @@ def scroll_stage_list(hwnd: int, client: dict[str, int], wheel_steps: int, stage
         scroll_up(hwnd, client, wheel_steps)
     else:
         scroll_down(hwnd, client, wheel_steps)
+
+
+def select_stage_one_one_from_top(target: dict, wheel_steps: int) -> bool:
+    log("Stage 1-1 forced top-list selection started")
+    scroll_up(target["hwnd"], target["client"], max(wheel_steps * 3, 45))
+    human_sleep(0.35, 0.25)
+    refreshed = find_nte_window() or target
+    target.update(refreshed)
+    click_x, click_y = scale_point(target["client"], STAGE_1_1_TOP_ROW_POINT)
+    fast_click(
+        target["hwnd"],
+        target["client"]["left"] + click_x,
+        target["client"]["top"] + click_y,
+        focus_delay=0.03,
+    )
+    human_sleep(0.45, 0.25)
+    refreshed = find_nte_window() or target
+    target.update(refreshed)
+    save_owner_selection_probe(target, 0, "1-1_after_forced_select")
+    print("Selected stage 1-1 from the top of the list.")
+    log("Stage 1-1 forced top-list selection finished")
+    return True
 
 
 def save_debug_image(
@@ -1229,7 +1252,25 @@ def main() -> int:
         if args.open_support_only:
             return 0 if open_support_employee_page_only(target) else 7
 
-        if selected_stage(
+        if args.stage == "1-1":
+            select_stage_one_one_from_top(target, args.wheel_steps)
+            stable_timeout = max(args.verify_timeout or 1.5, 1.5)
+            if not wait_for_stage_selected(
+                target["client"],
+                title_template,
+                title_number_template,
+                args.verify_threshold,
+                stable_timeout,
+                stage_label,
+            ):
+                print(f"Could not verify selected stage {stage_label}. Did not click Open Shop.")
+                return 5
+            print(f"Verified selected stage {stage_label} before Open Shop.")
+            if args.select_stage_only:
+                return 0
+            return open_shop_and_monitor(target, args)
+
+        if args.stage != "1-1" and selected_stage(
             target["client"],
             title_template,
             title_number_template,

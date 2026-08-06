@@ -10,6 +10,7 @@ import cv2
 import numpy as np
 
 from play import (
+    WORKSPACE,
     capture_client_band_color,
     capture_region,
     find_nte_window,
@@ -19,8 +20,6 @@ from play import (
     ui_scale,
 )
 
-
-WORKSPACE = Path(__file__).resolve().parent
 ASSET_DIR = WORKSPACE / "stage_1_1_assets" / "items"
 ORDER_ASSET_DIR = WORKSPACE / "stage_1_1_assets" / "orders"
 DEBUG_DIR = WORKSPACE / "stage_1_1_debug"
