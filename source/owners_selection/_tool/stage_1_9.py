@@ -198,6 +198,8 @@ def run_cycle(
                 emit("Handling orders.")
             else:
                 emit("Revenue is updating.")
+        elif stripped.startswith("Verified selected stage "):
+            emit(f"{stage_label.capitalize()} verified before Open Shop.")
         elif stage == "1-1" and stripped.startswith("ORDER_RUNNER_STARTED"):
             emit("Order handling started.")
         elif stage == "1-1" and stripped.startswith("ORDER_SCANNING "):
@@ -387,6 +389,8 @@ def run_stage_1_1_calibration(owner_timeout: float, verify_timeout: float | None
         log(f"calibration stdout: {stripped}")
         if "Da bam Open Shop." in line:
             emit("Stage 1-1 found, clicked Open Shop.")
+        elif stripped.startswith("Verified selected stage "):
+            emit("Stage 1-1 verified before Open Shop.")
         elif stripped.startswith("CALIBRATION_FULL_IMAGE="):
             emit("Saved full calibration screenshot.")
         elif stripped.startswith("CALIBRATION_ORDER_CROP="):
@@ -402,6 +406,12 @@ def run_stage_1_1_calibration(owner_timeout: float, verify_timeout: float | None
     result = wait_for_child()
     if result != 0:
         emit("Calibration failed.")
+        return result
+    if wait_for_owner_selection(max(6.0, owner_timeout)):
+        emit("Owner's Selection ready for Run 1.")
+    else:
+        emit("Owner's Selection was not restored after calibration.")
+        return 6
     return result
 
 
