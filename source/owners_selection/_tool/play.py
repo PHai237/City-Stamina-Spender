@@ -1237,7 +1237,7 @@ def main() -> int:
             stage_label,
         ):
             print(f"Stage {stage_label} is already selected.")
-            if not args.no_click and not args.select_stage_only:
+            if not args.no_click:
                 stable_timeout = max(args.verify_timeout or 1.5, 1.5 if args.stage == "1-1" else 0.8)
                 if not wait_for_stage_selected(
                     target["client"],
@@ -1250,6 +1250,8 @@ def main() -> int:
                     print(f"Could not verify selected stage {stage_label}. Did not click Open Shop.")
                     return 5
                 print(f"Verified selected stage {stage_label} before Open Shop.")
+                if args.select_stage_only:
+                    return 0
                 return open_shop_and_monitor(target, args)
             return 0
 
@@ -1290,6 +1292,7 @@ def main() -> int:
                 ):
                     print(f"Could not verify stage {stage_label}. Did not click Open Shop.")
                     return 5
+                print(f"Verified selected stage {stage_label} before Open Shop.")
                 if args.select_stage_only:
                     return 0
                 return open_shop_and_monitor(target, args)

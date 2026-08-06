@@ -74,9 +74,10 @@ def relaunch_as_admin() -> bool:
     )
 
 
-def wait_for_owner_selection(timeout: float) -> bool:
-    log(f"Waiting for Owner's Selection timeout={timeout}")
+def wait_for_owner_selection(timeout: float, stable_hits: int = 1) -> bool:
+    log(f"Waiting for Owner's Selection timeout={timeout} stable_hits={stable_hits}")
     deadline = time.monotonic() + timeout
+    hits = 0
     while time.monotonic() < deadline:
         target = find_nte_window()
         if target:
@@ -91,10 +92,15 @@ def wait_for_owner_selection(timeout: float) -> bool:
                 f"client={target['client']}"
             )
             if is_owner_selection_screen(target["client"], OWNER_TEMPLATE):
-                log("Owner's Selection verified")
-                return True
+                hits += 1
+                log(f"Owner's Selection verified hits={hits}/{stable_hits}")
+                if hits >= stable_hits:
+                    return True
+            else:
+                hits = 0
         else:
             log("Owner wait did not find NTE")
+            hits = 0
         human_sleep(0.4, 0.35)
     log("Owner's Selection wait timed out")
     return False
@@ -364,10 +370,28 @@ def start_play_cycle(
     return queued_lines(), wait_for_thread
 
 
+def verify_stage_selected_only(stage: str, verify_timeout: float | None) -> bool:
+    child_lines, wait_for_child = start_play_cycle(
+        stage,
+        skip_support_employee_check=True,
+        verify_timeout=verify_timeout,
+        extra_args=["--select-stage-only"],
+    )
+    verified = False
+    for line in child_lines:
+        stripped = line.rstrip()
+        log(f"stage verify stdout: {stripped}")
+        if stripped.startswith("Verified selected stage "):
+            verified = True
+    result = wait_for_child()
+    log(f"stage verify finished result={result} verified={verified}")
+    return result == 0 and verified
+
+
 def run_stage_1_1_calibration(owner_timeout: float, verify_timeout: float | None) -> int:
     print("Run 0: Calibrating Stage 1-1 order area.")
     print("  Line 1: Looking for stage 1-1.")
-    if not wait_for_owner_selection(owner_timeout):
+    if not wait_for_owner_selection(owner_timeout, stable_hits=2):
         print("  Line 2: Owner's Selection was not found, stopping.")
         return 6
 
@@ -407,12 +431,17 @@ def run_stage_1_1_calibration(owner_timeout: float, verify_timeout: float | None
     if result != 0:
         emit("Calibration failed.")
         return result
-    if wait_for_owner_selection(max(6.0, owner_timeout)):
+    if wait_for_owner_selection(max(8.0, owner_timeout), stable_hits=3):
         emit("Owner's Selection ready for Run 1.")
         human_sleep(0.8, 0.25)
     else:
         emit("Owner's Selection was not restored after calibration.")
         return 6
+    if verify_stage_selected_only("1-1", max(verify_timeout or 0.0, 3.0)):
+        emit("Stage 1-1 verified again after calibration.")
+    else:
+        emit("Stage 1-1 was not verified after calibration, stopping.")
+        return 5
     return result
 
 

@@ -19,7 +19,7 @@ namespace CityStamina.Avalonia.ViewModels;
 
 public partial class MainViewModel : ViewModelBase
 {
-    public const string AppVersion = "1.2.15";
+    public const string AppVersion = "1.2.16";
     private const string LatestManifestUrl = "https://raw.githubusercontent.com/PHai237/City-Stamina-Spender/main/latest.json";
     private const string StageOneNine = "Stage 1-9";
     private const string StageOneOne = "Stage 1-1";
@@ -524,7 +524,7 @@ public partial class MainViewModel : ViewModelBase
         var arguments = amount.ToString(CultureInfo.InvariantCulture) + $" --stage {stage} --no-admin-relaunch";
         if (stage == "1-1")
         {
-            arguments += " --owner-timeout 6 --verify-timeout 1 --between-cycles 1";
+            arguments += " --owner-timeout 10 --verify-timeout 3 --between-cycles 1";
         }
         if (skipSupportEmployeeCheck)
         {
@@ -541,7 +541,7 @@ public partial class MainViewModel : ViewModelBase
 
     private Process StartOwnerCalibrationProcess()
     {
-        var arguments = "1 --stage 1-1 --stage-1-1-calibrate-run --no-admin-relaunch --owner-timeout 6 --verify-timeout 1 --between-cycles 1 --skip-support-employee-check";
+        var arguments = "1 --stage 1-1 --stage-1-1-calibrate-run --no-admin-relaunch --owner-timeout 10 --verify-timeout 3 --between-cycles 1 --skip-support-employee-check";
         var command = ResolveOwnerCommand(arguments);
         WriteWrapperDebug(
             "wrapper",

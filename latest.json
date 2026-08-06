@@ -1,5 +1,5 @@
 {
-  "version": "1.2.15",
-  "url": "https://github.com/PHai237/City-Stamina-Spender/releases/download/v1.2.15/City.Stamina.Spender.exe",
-  "notes": "Add Owner Selection probe screenshots and updater verification."
+  "version": "1.2.16",
+  "url": "https://github.com/PHai237/City-Stamina-Spender/releases/download/v1.2.16/City.Stamina.Spender.exe",
+  "notes": "Require stable Stage 1-1 verification after calibration before running."
 }
