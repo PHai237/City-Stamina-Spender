@@ -19,7 +19,7 @@ namespace CityStamina.Avalonia.ViewModels;
 
 public partial class MainViewModel : ViewModelBase
 {
-    public const string AppVersion = "1.2.16";
+    public const string AppVersion = "1.2.17";
     private const string LatestManifestUrl = "https://raw.githubusercontent.com/PHai237/City-Stamina-Spender/main/latest.json";
     private const string StageOneNine = "Stage 1-9";
     private const string StageOneOne = "Stage 1-1";
@@ -318,6 +318,59 @@ public partial class MainViewModel : ViewModelBase
     {
         AppendLog(message);
         WriteWrapperDebug("hotkey", message);
+    }
+
+    [RelayCommand]
+    private void ExportDebug()
+    {
+        try
+        {
+            var desktop = Environment.GetFolderPath(Environment.SpecialFolder.DesktopDirectory);
+            if (string.IsNullOrWhiteSpace(desktop) || !Directory.Exists(desktop))
+            {
+                desktop = _rootDir;
+            }
+
+            var timestamp = DateTime.Now.ToString("yyyyMMdd_HHmmss", CultureInfo.InvariantCulture);
+            var zipPath = Path.Combine(desktop, $"city-stamina-debug-{timestamp}.zip");
+            using var archive = ZipFile.Open(zipPath, ZipArchiveMode.Create);
+
+            AddTextEntry(
+                archive,
+                "summary.txt",
+                string.Join(
+                    Environment.NewLine,
+                    [
+                        "City Stamina Spender debug package",
+                        "Version: " + AppVersion,
+                        "Created: " + DateTime.Now.ToString("yyyy-MM-dd HH:mm:ss", CultureInfo.InvariantCulture),
+                        "Selected stage: " + SelectedStage,
+                        "Target stamina: " + TargetStamina,
+                        "Spent so far: " + SpentSoFar,
+                        "Elapsed: " + Elapsed,
+                        "Root dir: " + _rootDir,
+                        "Data dir: " + _dataDir,
+                        "Owner tool dir: " + _ownerToolDir,
+                    ]
+                )
+            );
+            AddTextEntry(archive, "ui_log.txt", LogText);
+
+            AddFileIfExists(archive, Path.Combine(_rootDir, "update.log"), "update.log");
+            AddFileIfExists(archive, _wrapperLogPath, "wrapper_debug/run.log");
+            AddDirectoryIfExists(archive, Path.Combine(_ownerToolDir, "stage_1_9_debug"), "stage_1_9_debug");
+            AddDirectoryIfExists(archive, Path.Combine(_ownerToolDir, "stage_1_1_debug"), "stage_1_1_debug");
+            AddDirectoryIfExists(archive, Path.Combine(_ownerToolDir, "gameplay_exit_debug"), "gameplay_exit_debug");
+            AddFileIfExists(archive, Path.Combine(_ownerToolDir, "stage_1_1_tuning.json"), "stage_1_1_tuning.json");
+
+            AppendLog("Debug zip saved to Desktop.");
+            WriteWrapperDebug("debug", "Exported debug zip: " + zipPath);
+        }
+        catch (Exception ex)
+        {
+            AppendLog("Debug zip failed: " + ex.Message);
+            WriteWrapperDebug("debug", ex.ToString());
+        }
     }
 
     [RelayCommand]
@@ -848,6 +901,67 @@ public partial class MainViewModel : ViewModelBase
         {
             // Debug logging must never stop the automation.
         }
+    }
+
+    private static void AddTextEntry(ZipArchive archive, string entryName, string content)
+    {
+        var entry = archive.CreateEntry(NormalizeZipEntryName(entryName), CompressionLevel.Fastest);
+        using var writer = new StreamWriter(entry.Open(), new UTF8Encoding(encoderShouldEmitUTF8Identifier: false));
+        writer.Write(content);
+    }
+
+    private static void AddFileIfExists(ZipArchive archive, string filePath, string entryName)
+    {
+        if (!File.Exists(filePath))
+        {
+            return;
+        }
+
+        var fileInfo = new FileInfo(filePath);
+        if (fileInfo.Length <= 0)
+        {
+            return;
+        }
+
+        var entry = archive.CreateEntry(NormalizeZipEntryName(entryName), CompressionLevel.Fastest);
+        using var source = new FileStream(filePath, FileMode.Open, FileAccess.Read, FileShare.ReadWrite);
+        using var target = entry.Open();
+        source.CopyTo(target);
+    }
+
+    private static void AddDirectoryIfExists(ZipArchive archive, string directoryPath, string entryRoot)
+    {
+        if (!Directory.Exists(directoryPath))
+        {
+            return;
+        }
+
+        var allowedExtensions = new HashSet<string>(StringComparer.OrdinalIgnoreCase)
+        {
+            ".txt",
+            ".log",
+            ".json",
+            ".png",
+            ".jpg",
+            ".jpeg",
+        };
+
+        foreach (var filePath in Directory.EnumerateFiles(directoryPath, "*", SearchOption.AllDirectories))
+        {
+            var extension = Path.GetExtension(filePath);
+            if (!allowedExtensions.Contains(extension))
+            {
+                continue;
+            }
+
+            var relative = Path.GetRelativePath(directoryPath, filePath);
+            AddFileIfExists(archive, filePath, Path.Combine(entryRoot, relative));
+        }
+    }
+
+    private static string NormalizeZipEntryName(string entryName)
+    {
+        return entryName.Replace('\\', '/').TrimStart('/');
     }
 
     private static int ParseAmount(string value)

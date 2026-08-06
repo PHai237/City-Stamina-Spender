@@ -21,8 +21,8 @@ const state = {
   isDetailVisible: false,
   isRunning: false,
   stageDropdownOpen: false,
-  currentVersion: "1.2.16",
-  latestVersion: "1.2.16",
+  currentVersion: "1.2.17",
+  latestVersion: "1.2.17",
   updateState: "checking",
   updateMessage: "Checking for updates...",
   updateProgress: 0,
@@ -42,6 +42,7 @@ function icon(name, size = 14) {
     layers: '<path d="m12 2 9 5-9 5-9-5 9-5Z"></path><path d="m3 12 9 5 9-5"></path><path d="m3 17 9 5 9-5"></path>',
     left: '<path d="m15 18-6-6 6-6"></path>',
     chevron: '<path d="m6 9 6 6 6-6"></path>',
+    download: '<path d="M12 3v12"></path><path d="m7 10 5 5 5-5"></path><path d="M5 21h14"></path>',
   };
 
   return `<svg ${attrs}>${paths[name] || ""}</svg>`;
@@ -278,6 +279,7 @@ function logPanel() {
       <div class="log-head">
         <span>Log</span>
         <div class="divider"></div>
+        <button id="debugZipButton" class="debug-zip-button" ${state.isRunning ? "disabled" : ""}>${icon("download", 11)} Debug zip</button>
         ${state.isRunning ? '<span class="running-indicator"><span class="dot"></span>Running</span>' : ""}
       </div>
       <div class="log-wrap">
@@ -363,6 +365,9 @@ function bindEvents() {
 
   const stopButton = document.getElementById("stopButton");
   if (stopButton) stopButton.addEventListener("click", () => post({ type: "stop" }));
+
+  const debugZipButton = document.getElementById("debugZipButton");
+  if (debugZipButton) debugZipButton.addEventListener("click", () => post({ type: "exportDebug" }));
 }
 
 document.addEventListener("keydown", (event) => {

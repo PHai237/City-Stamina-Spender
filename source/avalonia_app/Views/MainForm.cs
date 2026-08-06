@@ -151,6 +151,9 @@ public sealed class MainForm : Form
             case "stop":
                 ExecuteIfPossible(_viewModel.StopCommand);
                 break;
+            case "exportDebug":
+                ExecuteIfPossible(_viewModel.ExportDebugCommand);
+                break;
         }
     }
 
