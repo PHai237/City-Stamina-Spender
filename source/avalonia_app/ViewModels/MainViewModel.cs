@@ -19,7 +19,7 @@ namespace CityStamina.Avalonia.ViewModels;
 
 public partial class MainViewModel : ViewModelBase
 {
-    public const string AppVersion = "1.2.12";
+    public const string AppVersion = "1.2.13";
     private const string LatestManifestUrl = "https://raw.githubusercontent.com/PHai237/City-Stamina-Spender/main/latest.json";
     private const string StageOneNine = "Stage 1-9";
     private const string StageOneOne = "Stage 1-1";
@@ -1024,13 +1024,54 @@ param(
 )
 
 $ErrorActionPreference = 'Stop'
-Start-Sleep -Milliseconds 800
-try { Wait-Process -Id $Pid -ErrorAction SilentlyContinue } catch {}
+$TargetDir = Split-Path -Parent $Exe
+$LogPath = Join-Path $TargetDir 'update.log'
+function Write-UpdateLog([string]$Message) {
+  try { Add-Content -LiteralPath $LogPath -Value ((Get-Date -Format 'yyyy-MM-dd HH:mm:ss') + ' ' + $Message) -Encoding UTF8 } catch {}
+}
 
-Copy-Item -LiteralPath (Join-Path $Source 'City Stamina Spender.exe') -Destination $Exe -Force
-Start-Process -FilePath $Exe -WorkingDirectory (Split-Path -Parent $Exe)
-Start-Sleep -Seconds 2
-try { Remove-Item -LiteralPath $Temp -Recurse -Force } catch {}
+try {
+  Write-UpdateLog 'Updater started.'
+  Start-Sleep -Milliseconds 800
+  try { Wait-Process -Id $Pid -Timeout 30 -ErrorAction SilentlyContinue } catch {}
+
+  $SourceExe = Join-Path $Source 'City.Stamina.Spender.exe'
+  if (-not (Test-Path -LiteralPath $SourceExe)) {
+    $SourceExe = Join-Path $Source 'City Stamina Spender.exe'
+  }
+  if (-not (Test-Path -LiteralPath $SourceExe)) {
+    throw 'Downloaded exe was not found.'
+  }
+
+  $NewExe = $Exe + '.new'
+  Copy-Item -LiteralPath $SourceExe -Destination $NewExe -Force
+
+  $updated = $false
+  for ($i = 1; $i -le 60; $i++) {
+    try {
+      Copy-Item -LiteralPath $NewExe -Destination $Exe -Force
+      $updated = $true
+      Write-UpdateLog ('Update copied on attempt ' + $i + '.')
+      break
+    } catch {
+      Write-UpdateLog ('Copy attempt ' + $i + ' failed: ' + $_.Exception.Message)
+      Start-Sleep -Milliseconds 500
+    }
+  }
+  if (-not $updated) {
+    throw 'Could not replace the running exe after multiple attempts.'
+  }
+
+  try { Remove-Item -LiteralPath $NewExe -Force } catch {}
+  Start-Process -FilePath $Exe -WorkingDirectory $TargetDir
+  Start-Sleep -Seconds 2
+  try { Remove-Item -LiteralPath $Temp -Recurse -Force } catch {}
+  Write-UpdateLog 'Updater finished.'
+} catch {
+  Write-UpdateLog ('Updater failed: ' + $_.Exception.Message)
+  try { Start-Process -FilePath $Exe -WorkingDirectory $TargetDir } catch {}
+  exit 1
+}
 """
             : """
 param(
@@ -1042,28 +1083,69 @@ param(
 )
 
 $ErrorActionPreference = 'Stop'
-Start-Sleep -Milliseconds 800
-try { Wait-Process -Id $Pid -ErrorAction SilentlyContinue } catch {}
+$TargetDir = Split-Path -Parent $Exe
+$LogPath = Join-Path $TargetDir 'update.log'
+function Write-UpdateLog([string]$Message) {
+  try { Add-Content -LiteralPath $LogPath -Value ((Get-Date -Format 'yyyy-MM-dd HH:mm:ss') + ' ' + $Message) -Encoding UTF8 } catch {}
+}
 
-Copy-Item -LiteralPath (Join-Path $Source 'City Stamina Spender.exe') -Destination $Target -Force
-if (Test-Path -LiteralPath (Join-Path $Source 'app_data')) {
-  Copy-Item -LiteralPath (Join-Path $Source 'app_data') -Destination $Target -Recurse -Force
-} else {
-  $DataTarget = Join-Path $Target 'app_data'
-  if (-not (Test-Path -LiteralPath $DataTarget)) { New-Item -ItemType Directory -Path $DataTarget | Out-Null }
-  Copy-Item -LiteralPath (Join-Path $Source 'web_ui') -Destination $DataTarget -Recurse -Force
-  Copy-Item -LiteralPath (Join-Path $Source 'owners_selection') -Destination $DataTarget -Recurse -Force
-  if (Test-Path -LiteralPath (Join-Path $Source 'latest.json')) {
-    Copy-Item -LiteralPath (Join-Path $Source 'latest.json') -Destination $DataTarget -Force
+try {
+  Write-UpdateLog 'Updater started.'
+  Start-Sleep -Milliseconds 800
+  try { Wait-Process -Id $Pid -Timeout 30 -ErrorAction SilentlyContinue } catch {}
+
+  $SourceExe = Join-Path $Source 'City.Stamina.Spender.exe'
+  if (-not (Test-Path -LiteralPath $SourceExe)) {
+    $SourceExe = Join-Path $Source 'City Stamina Spender.exe'
   }
-}
-if (Test-Path -LiteralPath (Join-Path $Source 'README.md')) {
-  Copy-Item -LiteralPath (Join-Path $Source 'README.md') -Destination $Target -Force
-}
+  if (-not (Test-Path -LiteralPath $SourceExe)) {
+    throw 'Downloaded exe was not found.'
+  }
 
-Start-Process -FilePath $Exe -WorkingDirectory $Target
-Start-Sleep -Seconds 2
-try { Remove-Item -LiteralPath $Temp -Recurse -Force } catch {}
+  $NewExe = $Exe + '.new'
+  Copy-Item -LiteralPath $SourceExe -Destination $NewExe -Force
+
+  $updated = $false
+  for ($i = 1; $i -le 60; $i++) {
+    try {
+      Copy-Item -LiteralPath $NewExe -Destination $Exe -Force
+      $updated = $true
+      Write-UpdateLog ('Update copied on attempt ' + $i + '.')
+      break
+    } catch {
+      Write-UpdateLog ('Copy attempt ' + $i + ' failed: ' + $_.Exception.Message)
+      Start-Sleep -Milliseconds 500
+    }
+  }
+  if (-not $updated) {
+    throw 'Could not replace the running exe after multiple attempts.'
+  }
+
+  if (Test-Path -LiteralPath (Join-Path $Source 'app_data')) {
+    Copy-Item -LiteralPath (Join-Path $Source 'app_data') -Destination $Target -Recurse -Force
+  } else {
+    $DataTarget = Join-Path $Target 'app_data'
+    if (-not (Test-Path -LiteralPath $DataTarget)) { New-Item -ItemType Directory -Path $DataTarget | Out-Null }
+    Copy-Item -LiteralPath (Join-Path $Source 'web_ui') -Destination $DataTarget -Recurse -Force
+    Copy-Item -LiteralPath (Join-Path $Source 'owners_selection') -Destination $DataTarget -Recurse -Force
+    if (Test-Path -LiteralPath (Join-Path $Source 'latest.json')) {
+      Copy-Item -LiteralPath (Join-Path $Source 'latest.json') -Destination $DataTarget -Force
+    }
+  }
+  if (Test-Path -LiteralPath (Join-Path $Source 'README.md')) {
+    Copy-Item -LiteralPath (Join-Path $Source 'README.md') -Destination $Target -Force
+  }
+
+  try { Remove-Item -LiteralPath $NewExe -Force } catch {}
+  Start-Process -FilePath $Exe -WorkingDirectory $TargetDir
+  Start-Sleep -Seconds 2
+  try { Remove-Item -LiteralPath $Temp -Recurse -Force } catch {}
+  Write-UpdateLog 'Updater finished.'
+} catch {
+  Write-UpdateLog ('Updater failed: ' + $_.Exception.Message)
+  try { Start-Process -FilePath $Exe -WorkingDirectory $TargetDir } catch {}
+  exit 1
+}
 """;
         File.WriteAllText(scriptPath, script, Encoding.UTF8);
         return scriptPath;

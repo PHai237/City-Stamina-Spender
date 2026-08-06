@@ -6,7 +6,7 @@ from pathlib import Path
 
 import cv2
 
-from monitor import EXIT_POINT, wait_for_challenge_and_claim
+from monitor import EXIT_POINT, wait_for_challenge_result_and_exit
 from play import capture_client_band_color, capture_region, click, find_nte_window, focus_window, scale_point
 from stage_1_1_orders import (
     DEBUG_DIR,
@@ -167,7 +167,7 @@ def run_open_shop_calibration(exit_after: bool = True) -> int:
             target["client"]["top"] + exit_rel_y,
         )
         print("CALIBRATION_EXIT_CLICKED")
-        wait_for_challenge_and_claim(12.0)
+        wait_for_challenge_result_and_exit(12.0)
 
     return 0
 

@@ -1,5 +1,5 @@
 {
-  "version": "1.2.12",
-  "url": "https://github.com/PHai237/City-Stamina-Spender/releases/download/v1.2.12/City.Stamina.Spender.exe",
-  "notes": "Add Stage 1-1 Run 0 order-area calibration."
+  "version": "1.2.13",
+  "url": "https://github.com/PHai237/City-Stamina-Spender/releases/download/v1.2.13/City.Stamina.Spender.exe",
+  "notes": "Fix updater install reliability and Stage 1-1 calibration failed-exit handling."
 }

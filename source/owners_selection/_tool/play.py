@@ -139,7 +139,8 @@ def find_nte_window() -> dict | None:
     candidates = []
     for window in get_windows():
         client = window["client"]
-        is_nte_title = "nte" in window["title"].casefold()
+        normalized_title = window["title"].strip().casefold()
+        is_nte_title = normalized_title == "nte" or normalized_title.startswith("nte ")
         is_unreal_window = window.get("class_name") == "UnrealWindow"
         if not (is_nte_title or is_unreal_window):
             continue

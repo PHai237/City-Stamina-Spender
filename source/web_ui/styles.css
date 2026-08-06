@@ -262,6 +262,7 @@ button {
 
 .update-popover.updating {
   border-color: rgba(62, 207, 178, 0.28);
+  animation: none;
 }
 
 .update-popover.updating::before {

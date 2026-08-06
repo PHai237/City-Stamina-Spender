@@ -7,6 +7,7 @@ import time
 from pathlib import Path
 
 import cv2
+import mss
 import numpy as np
 
 from play import (
@@ -39,6 +40,9 @@ GAMEPLAY_TITLE_TEMPLATE = cv2.imread(
 CHALLENGE_REGION = {"left": 350, "top": 85, "width": 580, "height": 115}
 CLAIM_REGION = {"left": 640, "top": 500, "width": 270, "height": 110}
 CLAIM_POINT = (775, 558)
+FAILED_EXIT_POINT = (506, 560)
+FAILED_TITLE_REGION = {"left": 430, "top": 110, "width": 430, "height": 90}
+FAILED_BUTTON_REGION = {"left": 385, "top": 500, "width": 260, "height": 110}
 CHALLENGE_TEMPLATE = cv2.imread(
     str(WORKSPACE / "loop_assets/challenge_successful_title.png"), cv2.IMREAD_GRAYSCALE
 )
@@ -393,6 +397,62 @@ def wait_for_challenge_and_claim(timeout: float = 15.0) -> int:
             return 0
         human_sleep(0.35, 0.35)
     print("Khong xac minh duoc man Challenge Successful/Claim.")
+    return 5
+
+
+def challenge_failed_visible(target: dict) -> bool:
+    title_area = capture_region(target["client"], FAILED_TITLE_REGION, "center")
+    button_area = capture_region(target["client"], FAILED_BUTTON_REGION, "center")
+    DEBUG_DIR.mkdir(parents=True, exist_ok=True)
+    cv2.imwrite(str(DEBUG_DIR / "latest_failed_title_region.png"), title_area)
+    cv2.imwrite(str(DEBUG_DIR / "latest_failed_exit_region.png"), button_area)
+
+    # Failed result screen is strongly red in the title band and has a bright
+    # white Exit button in the lower-left result area.
+    with mss.MSS() as sct:
+        scale = ui_scale(target["client"])
+        title_scaled = scale_region(target["client"], FAILED_TITLE_REGION, "center")
+        title_region = {
+            "left": target["client"]["left"] + title_scaled["left"],
+            "top": target["client"]["top"] + title_scaled["top"],
+            "width": title_scaled["width"],
+            "height": title_scaled["height"],
+        }
+        color = np.asarray(sct.grab(title_region))
+    bgr = cv2.cvtColor(color, cv2.COLOR_BGRA2BGR)
+    red_mask = cv2.inRange(bgr, (0, 0, 120), (90, 90, 255))
+    red_ratio = float(np.count_nonzero(red_mask)) / max(1, red_mask.size)
+    bright_ratio = float(np.count_nonzero(cv2.inRange(button_area, 185, 255))) / max(1, button_area.size)
+    log(f"Challenge failed check red={red_ratio:.3f} bright_button={bright_ratio:.3f}")
+    return red_ratio >= 0.015 and bright_ratio >= 0.18
+
+
+def click_failed_exit_if_visible(target: dict) -> bool:
+    if not challenge_failed_visible(target):
+        return False
+
+    exit_rel_x, exit_rel_y = scale_point(target["client"], FAILED_EXIT_POINT, "center")
+    click(
+        target["hwnd"],
+        target["client"]["left"] + exit_rel_x,
+        target["client"]["top"] + exit_rel_y,
+    )
+    print("Da thay Challenge Failed. Da bam Exit.")
+    return True
+
+
+def wait_for_challenge_result_and_exit(timeout: float = 15.0) -> int:
+    deadline = time.monotonic() + timeout
+    while time.monotonic() < deadline:
+        target = find_nte_window()
+        if not target:
+            return 2
+        if click_claim_if_visible(target):
+            return 0
+        if click_failed_exit_if_visible(target):
+            return 0
+        human_sleep(0.35, 0.35)
+    print("Khong xac minh duoc man Challenge Successful/Failed.")
     return 5
 
 
