@@ -1,5 +1,5 @@
 {
-  "version": "1.2.18",
-  "url": "https://github.com/PHai237/City-Stamina-Spender/releases/download/v1.2.18/City.Stamina.Spender.exe",
-  "notes": "Export a small tester debug text report instead of a zip."
+  "version": "1.2.19",
+  "url": "https://github.com/PHai237/City-Stamina-Spender/releases/download/v1.2.19/City.Stamina.Spender.exe",
+  "notes": "Export full debug package with logs and latest screenshots."
 }
