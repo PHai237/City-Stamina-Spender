@@ -19,7 +19,7 @@ namespace CityStamina.Avalonia.ViewModels;
 
 public partial class MainViewModel : ViewModelBase
 {
-    public const string AppVersion = "1.2.17";
+    public const string AppVersion = "1.2.18";
     private const string LatestManifestUrl = "https://raw.githubusercontent.com/PHai237/City-Stamina-Spender/main/latest.json";
     private const string StageOneNine = "Stage 1-9";
     private const string StageOneOne = "Stage 1-1";
@@ -332,16 +332,15 @@ public partial class MainViewModel : ViewModelBase
             }
 
             var timestamp = DateTime.Now.ToString("yyyyMMdd_HHmmss", CultureInfo.InvariantCulture);
-            var zipPath = Path.Combine(desktop, $"city-stamina-debug-{timestamp}.zip");
-            using var archive = ZipFile.Open(zipPath, ZipArchiveMode.Create);
-
-            AddTextEntry(
-                archive,
-                "summary.txt",
+            var reportPath = Path.Combine(desktop, $"city-stamina-debug-{timestamp}.txt");
+            var report = new StringBuilder();
+            AppendSection(
+                report,
+                "SUMMARY",
                 string.Join(
                     Environment.NewLine,
                     [
-                        "City Stamina Spender debug package",
+                        "City Stamina Spender debug report",
                         "Version: " + AppVersion,
                         "Created: " + DateTime.Now.ToString("yyyy-MM-dd HH:mm:ss", CultureInfo.InvariantCulture),
                         "Selected stage: " + SelectedStage,
@@ -354,21 +353,22 @@ public partial class MainViewModel : ViewModelBase
                     ]
                 )
             );
-            AddTextEntry(archive, "ui_log.txt", LogText);
+            AppendSection(report, "UI LOG", LogText);
+            AppendFileSection(report, "UPDATE LOG", Path.Combine(_rootDir, "update.log"));
+            AppendFileSection(report, "WRAPPER LOG", _wrapperLogPath);
+            AppendFileSection(report, "OWNER RUN LOG", Path.Combine(_ownerToolDir, "stage_1_9_debug", "run.log"));
+            AppendFileSection(report, "STAGE 1-1 TUNING", Path.Combine(_ownerToolDir, "stage_1_1_tuning.json"));
+            AppendDirectorySummary(report, "STAGE 1-9 DEBUG FILES", Path.Combine(_ownerToolDir, "stage_1_9_debug"));
+            AppendDirectorySummary(report, "STAGE 1-1 DEBUG FILES", Path.Combine(_ownerToolDir, "stage_1_1_debug"));
+            AppendDirectorySummary(report, "GAMEPLAY EXIT DEBUG FILES", Path.Combine(_ownerToolDir, "gameplay_exit_debug"));
 
-            AddFileIfExists(archive, Path.Combine(_rootDir, "update.log"), "update.log");
-            AddFileIfExists(archive, _wrapperLogPath, "wrapper_debug/run.log");
-            AddDirectoryIfExists(archive, Path.Combine(_ownerToolDir, "stage_1_9_debug"), "stage_1_9_debug");
-            AddDirectoryIfExists(archive, Path.Combine(_ownerToolDir, "stage_1_1_debug"), "stage_1_1_debug");
-            AddDirectoryIfExists(archive, Path.Combine(_ownerToolDir, "gameplay_exit_debug"), "gameplay_exit_debug");
-            AddFileIfExists(archive, Path.Combine(_ownerToolDir, "stage_1_1_tuning.json"), "stage_1_1_tuning.json");
-
-            AppendLog("Debug zip saved to Desktop.");
-            WriteWrapperDebug("debug", "Exported debug zip: " + zipPath);
+            File.WriteAllText(reportPath, report.ToString(), new UTF8Encoding(encoderShouldEmitUTF8Identifier: false));
+            AppendLog("Debug file saved to Desktop.");
+            WriteWrapperDebug("debug", "Exported debug file: " + reportPath);
         }
         catch (Exception ex)
         {
-            AppendLog("Debug zip failed: " + ex.Message);
+            AppendLog("Debug file failed: " + ex.Message);
             WriteWrapperDebug("debug", ex.ToString());
         }
     }
@@ -903,65 +903,63 @@ public partial class MainViewModel : ViewModelBase
         }
     }
 
-    private static void AddTextEntry(ZipArchive archive, string entryName, string content)
+    private static void AppendSection(StringBuilder builder, string title, string content)
     {
-        var entry = archive.CreateEntry(NormalizeZipEntryName(entryName), CompressionLevel.Fastest);
-        using var writer = new StreamWriter(entry.Open(), new UTF8Encoding(encoderShouldEmitUTF8Identifier: false));
-        writer.Write(content);
+        builder.AppendLine("==== " + title + " ====");
+        builder.AppendLine(string.IsNullOrWhiteSpace(content) ? "(empty)" : content.TrimEnd());
+        builder.AppendLine();
     }
 
-    private static void AddFileIfExists(ZipArchive archive, string filePath, string entryName)
+    private static void AppendFileSection(StringBuilder builder, string title, string filePath, int maxChars = 180_000)
     {
         if (!File.Exists(filePath))
         {
+            AppendSection(builder, title, "(missing) " + filePath);
             return;
         }
 
-        var fileInfo = new FileInfo(filePath);
-        if (fileInfo.Length <= 0)
+        try
         {
-            return;
+            var content = File.ReadAllText(filePath, Encoding.UTF8);
+            if (content.Length > maxChars)
+            {
+                content = content[^maxChars..];
+                content = "(trimmed to the latest lines)" + Environment.NewLine + content;
+            }
+            AppendSection(builder, title + " - " + filePath, content);
         }
-
-        var entry = archive.CreateEntry(NormalizeZipEntryName(entryName), CompressionLevel.Fastest);
-        using var source = new FileStream(filePath, FileMode.Open, FileAccess.Read, FileShare.ReadWrite);
-        using var target = entry.Open();
-        source.CopyTo(target);
+        catch (Exception ex)
+        {
+            AppendSection(builder, title, "Could not read " + filePath + ": " + ex.Message);
+        }
     }
 
-    private static void AddDirectoryIfExists(ZipArchive archive, string directoryPath, string entryRoot)
+    private static void AppendDirectorySummary(StringBuilder builder, string title, string directoryPath)
     {
         if (!Directory.Exists(directoryPath))
         {
+            AppendSection(builder, title, "(missing) " + directoryPath);
             return;
         }
 
-        var allowedExtensions = new HashSet<string>(StringComparer.OrdinalIgnoreCase)
+        try
         {
-            ".txt",
-            ".log",
-            ".json",
-            ".png",
-            ".jpg",
-            ".jpeg",
-        };
-
-        foreach (var filePath in Directory.EnumerateFiles(directoryPath, "*", SearchOption.AllDirectories))
-        {
-            var extension = Path.GetExtension(filePath);
-            if (!allowedExtensions.Contains(extension))
-            {
-                continue;
-            }
-
-            var relative = Path.GetRelativePath(directoryPath, filePath);
-            AddFileIfExists(archive, filePath, Path.Combine(entryRoot, relative));
+            var lines = Directory
+                .EnumerateFiles(directoryPath, "*", SearchOption.AllDirectories)
+                .Select(path => new FileInfo(path))
+                .OrderByDescending(file => file.LastWriteTimeUtc)
+                .Take(80)
+                .Select(file =>
+                {
+                    var relative = Path.GetRelativePath(directoryPath, file.FullName);
+                    return $"{file.LastWriteTime:yyyy-MM-dd HH:mm:ss} | {file.Length:N0} bytes | {relative}";
+                });
+            AppendSection(builder, title + " - " + directoryPath, string.Join(Environment.NewLine, lines));
         }
-    }
-
-    private static string NormalizeZipEntryName(string entryName)
-    {
-        return entryName.Replace('\\', '/').TrimStart('/');
+        catch (Exception ex)
+        {
+            AppendSection(builder, title, "Could not list " + directoryPath + ": " + ex.Message);
+        }
     }
 
     private static int ParseAmount(string value)

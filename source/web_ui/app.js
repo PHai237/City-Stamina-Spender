@@ -21,8 +21,8 @@ const state = {
   isDetailVisible: false,
   isRunning: false,
   stageDropdownOpen: false,
-  currentVersion: "1.2.17",
-  latestVersion: "1.2.17",
+  currentVersion: "1.2.18",
+  latestVersion: "1.2.18",
   updateState: "checking",
   updateMessage: "Checking for updates...",
   updateProgress: 0,
@@ -279,7 +279,7 @@ function logPanel() {
       <div class="log-head">
         <span>Log</span>
         <div class="divider"></div>
-        <button id="debugZipButton" class="debug-zip-button" ${state.isRunning ? "disabled" : ""}>${icon("download", 11)} Debug zip</button>
+        <button id="debugZipButton" class="debug-zip-button" ${state.isRunning ? "disabled" : ""}>${icon("download", 11)} Debug file</button>
         ${state.isRunning ? '<span class="running-indicator"><span class="dot"></span>Running</span>' : ""}
       </div>
       <div class="log-wrap">
