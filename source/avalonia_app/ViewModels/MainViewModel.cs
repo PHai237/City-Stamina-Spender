@@ -19,7 +19,7 @@ namespace CityStamina.Avalonia.ViewModels;
 
 public partial class MainViewModel : ViewModelBase
 {
-    public const string AppVersion = "1.2.19";
+    public const string AppVersion = "1.2.20";
     private const string LatestManifestUrl = "https://raw.githubusercontent.com/PHai237/City-Stamina-Spender/main/latest.json";
     private const string StageOneNine = "Stage 1-9";
     private const string StageOneOne = "Stage 1-1";
@@ -321,7 +321,7 @@ public partial class MainViewModel : ViewModelBase
     }
 
     [RelayCommand]
-    private void ExportDebug()
+    private async Task ExportDebugAsync()
     {
         try
         {
@@ -362,19 +362,31 @@ public partial class MainViewModel : ViewModelBase
             AppendDirectorySummary(report, "STAGE 1-1 DEBUG FILES", Path.Combine(_ownerToolDir, "stage_1_1_debug"));
             AppendDirectorySummary(report, "GAMEPLAY EXIT DEBUG FILES", Path.Combine(_ownerToolDir, "gameplay_exit_debug"));
 
+            var remainingDebugBytes = 22_000_000L;
             using (var archive = ZipFile.Open(packagePath, ZipArchiveMode.Create))
             {
                 AddTextEntry(archive, "debug-report.txt", report.ToString());
                 AddFileIfExists(archive, Path.Combine(_rootDir, "update.log"), "logs/update.log");
                 AddFileIfExists(archive, _wrapperLogPath, "logs/wrapper_run.log");
                 AddFileIfExists(archive, Path.Combine(_ownerToolDir, "stage_1_1_tuning.json"), "stage_1_1_tuning.json");
-                AddDebugDirectoryToZip(archive, Path.Combine(_ownerToolDir, "stage_1_9_debug"), "stage_1_9_debug");
-                AddDebugDirectoryToZip(archive, Path.Combine(_ownerToolDir, "stage_1_1_debug"), "stage_1_1_debug");
-                AddDebugDirectoryToZip(archive, Path.Combine(_ownerToolDir, "gameplay_exit_debug"), "gameplay_exit_debug");
+                AddDebugDirectoryToZip(archive, Path.Combine(_ownerToolDir, "stage_1_9_debug"), "stage_1_9_debug", ref remainingDebugBytes);
+                AddDebugDirectoryToZip(archive, Path.Combine(_ownerToolDir, "stage_1_1_debug"), "stage_1_1_debug", ref remainingDebugBytes);
+                AddDebugDirectoryToZip(archive, Path.Combine(_ownerToolDir, "gameplay_exit_debug"), "gameplay_exit_debug", ref remainingDebugBytes);
             }
 
             AppendLog("Debug package saved to Desktop.");
             WriteWrapperDebug("debug", "Exported debug package: " + packagePath);
+            if (TryReadDiscordWebhook(out var webhookUrl))
+            {
+                AppendLog("Sending debug package to Discord...");
+                await SendDebugPackageToDiscordAsync(webhookUrl, packagePath);
+                AppendLog("Debug package sent to Discord.");
+            }
+            else
+            {
+                EnsureWebhookTemplate();
+                AppendLog("No Discord webhook configured; package saved locally.");
+            }
         }
         catch (Exception ex)
         {
@@ -953,6 +965,105 @@ public partial class MainViewModel : ViewModelBase
         }
     }
 
+    private bool TryReadDiscordWebhook(out string webhookUrl)
+    {
+        webhookUrl = "";
+        var envWebhook = Environment.GetEnvironmentVariable("CITY_STAMINA_DISCORD_WEBHOOK")?.Trim();
+        if (IsDiscordWebhook(envWebhook))
+        {
+            webhookUrl = envWebhook!;
+            return true;
+        }
+
+        var webhookPath = Path.Combine(_rootDir, "discord_webhook.txt");
+        if (!File.Exists(webhookPath))
+        {
+            return false;
+        }
+
+        var text = File.ReadAllLines(webhookPath)
+            .Select(line => line.Trim())
+            .FirstOrDefault(line => IsDiscordWebhook(line));
+        if (string.IsNullOrWhiteSpace(text))
+        {
+            return false;
+        }
+
+        webhookUrl = text;
+        return true;
+    }
+
+    private void EnsureWebhookTemplate()
+    {
+        var webhookPath = Path.Combine(_rootDir, "discord_webhook.txt");
+        if (File.Exists(webhookPath))
+        {
+            return;
+        }
+
+        try
+        {
+            File.WriteAllText(
+                webhookPath,
+                string.Join(
+                    Environment.NewLine,
+                    [
+                        "Paste one Discord webhook URL on the next line.",
+                        "Do not upload this file to GitHub.",
+                        "",
+                    ]
+                ),
+                new UTF8Encoding(encoderShouldEmitUTF8Identifier: false)
+            );
+        }
+        catch
+        {
+            // The debug export still works locally without this helper file.
+        }
+    }
+
+    private static bool IsDiscordWebhook(string? value)
+    {
+        return !string.IsNullOrWhiteSpace(value)
+            && Uri.TryCreate(value, UriKind.Absolute, out var uri)
+            && (uri.Host.Equals("discord.com", StringComparison.OrdinalIgnoreCase)
+                || uri.Host.Equals("discordapp.com", StringComparison.OrdinalIgnoreCase))
+            && uri.AbsolutePath.Contains("/api/webhooks/", StringComparison.OrdinalIgnoreCase);
+    }
+
+    private async Task SendDebugPackageToDiscordAsync(string webhookUrl, string packagePath)
+    {
+        var fileInfo = new FileInfo(packagePath);
+        if (!fileInfo.Exists)
+        {
+            throw new FileNotFoundException("Debug package was not found.", packagePath);
+        }
+        if (fileInfo.Length > 24_000_000)
+        {
+            throw new InvalidOperationException("Debug package is too large for Discord. Please send the zip manually.");
+        }
+
+        using var client = CreateHttpClient();
+        using var form = new MultipartFormDataContent();
+        var payload = JsonSerializer.Serialize(new
+        {
+            content = $"City Stamina debug package v{AppVersion} | {SelectedStage} | {DateTime.Now:yyyy-MM-dd HH:mm:ss}"
+        });
+        form.Add(new StringContent(payload, Encoding.UTF8, "application/json"), "payload_json");
+
+        await using var stream = new FileStream(packagePath, FileMode.Open, FileAccess.Read, FileShare.Read);
+        using var fileContent = new StreamContent(stream);
+        fileContent.Headers.ContentType = new System.Net.Http.Headers.MediaTypeHeaderValue("application/zip");
+        form.Add(fileContent, "files[0]", Path.GetFileName(packagePath));
+
+        using var response = await client.PostAsync(webhookUrl, form);
+        if (!response.IsSuccessStatusCode)
+        {
+            var body = await response.Content.ReadAsStringAsync();
+            throw new InvalidOperationException($"Discord upload failed: {(int)response.StatusCode} {response.ReasonPhrase} {body}");
+        }
+    }
+
     private static void AppendFileSection(StringBuilder builder, string title, string filePath, int maxChars = 180_000)
     {
         if (!File.Exists(filePath))
@@ -1005,7 +1116,13 @@ public partial class MainViewModel : ViewModelBase
         }
     }
 
-    private static void AddDebugDirectoryToZip(ZipArchive archive, string directoryPath, string entryRoot, int maxFiles = 120)
+    private static void AddDebugDirectoryToZip(
+        ZipArchive archive,
+        string directoryPath,
+        string entryRoot,
+        ref long remainingBytes,
+        int maxFiles = 120
+    )
     {
         if (!Directory.Exists(directoryPath))
         {
@@ -1029,8 +1146,18 @@ public partial class MainViewModel : ViewModelBase
             .OrderByDescending(file => file.LastWriteTimeUtc)
             .Take(maxFiles))
         {
+            if (remainingBytes <= 0)
+            {
+                break;
+            }
+            if (file.Length > remainingBytes)
+            {
+                continue;
+            }
+
             var relative = Path.GetRelativePath(directoryPath, file.FullName);
             AddFileIfExists(archive, file.FullName, Path.Combine(entryRoot, relative));
+            remainingBytes -= file.Length;
         }
     }
 
