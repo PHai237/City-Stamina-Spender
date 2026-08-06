@@ -19,7 +19,7 @@ namespace CityStamina.Avalonia.ViewModels;
 
 public partial class MainViewModel : ViewModelBase
 {
-    public const string AppVersion = "1.2.14";
+    public const string AppVersion = "1.2.15";
     private const string LatestManifestUrl = "https://raw.githubusercontent.com/PHai237/City-Stamina-Spender/main/latest.json";
     private const string StageOneNine = "Stage 1-9";
     private const string StageOneOne = "Stage 1-1";
@@ -1042,6 +1042,8 @@ try {
   if (-not (Test-Path -LiteralPath $SourceExe)) {
     throw 'Downloaded exe was not found.'
   }
+  $SourceLength = (Get-Item -LiteralPath $SourceExe).Length
+  Write-UpdateLog ('Source exe: ' + $SourceExe + ' bytes=' + $SourceLength)
 
   $NewExe = $Exe + '.new'
   Copy-Item -LiteralPath $SourceExe -Destination $NewExe -Force
@@ -1050,13 +1052,17 @@ try {
   for ($i = 1; $i -le 60; $i++) {
     try {
       Copy-Item -LiteralPath $NewExe -Destination $Exe -Force
-      $updated = $true
-      Write-UpdateLog ('Update copied on attempt ' + $i + '.')
-      break
+      $TargetLength = (Get-Item -LiteralPath $Exe).Length
+      if ($TargetLength -eq $SourceLength) {
+        $updated = $true
+        Write-UpdateLog ('Update copied on attempt ' + $i + '. bytes=' + $TargetLength)
+        break
+      }
+      Write-UpdateLog ('Copy attempt ' + $i + ' size mismatch target=' + $TargetLength + ' source=' + $SourceLength)
     } catch {
       Write-UpdateLog ('Copy attempt ' + $i + ' failed: ' + $_.Exception.Message)
-      Start-Sleep -Milliseconds 500
     }
+    Start-Sleep -Milliseconds 500
   }
   if (-not $updated) {
     throw 'Could not replace the running exe after multiple attempts.'
@@ -1069,7 +1075,12 @@ try {
   Write-UpdateLog 'Updater finished.'
 } catch {
   Write-UpdateLog ('Updater failed: ' + $_.Exception.Message)
-  try { Start-Process -FilePath $Exe -WorkingDirectory $TargetDir } catch {}
+  if ($SourceExe -and (Test-Path -LiteralPath $SourceExe)) {
+    Write-UpdateLog 'Starting downloaded exe as fallback.'
+    try { Start-Process -FilePath $SourceExe -WorkingDirectory (Split-Path -Parent $SourceExe) } catch {}
+  } else {
+    try { Start-Process -FilePath $Exe -WorkingDirectory $TargetDir } catch {}
+  }
   exit 1
 }
 """
@@ -1101,6 +1112,8 @@ try {
   if (-not (Test-Path -LiteralPath $SourceExe)) {
     throw 'Downloaded exe was not found.'
   }
+  $SourceLength = (Get-Item -LiteralPath $SourceExe).Length
+  Write-UpdateLog ('Source exe: ' + $SourceExe + ' bytes=' + $SourceLength)
 
   $NewExe = $Exe + '.new'
   Copy-Item -LiteralPath $SourceExe -Destination $NewExe -Force
@@ -1109,13 +1122,17 @@ try {
   for ($i = 1; $i -le 60; $i++) {
     try {
       Copy-Item -LiteralPath $NewExe -Destination $Exe -Force
-      $updated = $true
-      Write-UpdateLog ('Update copied on attempt ' + $i + '.')
-      break
+      $TargetLength = (Get-Item -LiteralPath $Exe).Length
+      if ($TargetLength -eq $SourceLength) {
+        $updated = $true
+        Write-UpdateLog ('Update copied on attempt ' + $i + '. bytes=' + $TargetLength)
+        break
+      }
+      Write-UpdateLog ('Copy attempt ' + $i + ' size mismatch target=' + $TargetLength + ' source=' + $SourceLength)
     } catch {
       Write-UpdateLog ('Copy attempt ' + $i + ' failed: ' + $_.Exception.Message)
-      Start-Sleep -Milliseconds 500
     }
+    Start-Sleep -Milliseconds 500
   }
   if (-not $updated) {
     throw 'Could not replace the running exe after multiple attempts.'
@@ -1143,7 +1160,12 @@ try {
   Write-UpdateLog 'Updater finished.'
 } catch {
   Write-UpdateLog ('Updater failed: ' + $_.Exception.Message)
-  try { Start-Process -FilePath $Exe -WorkingDirectory $TargetDir } catch {}
+  if ($SourceExe -and (Test-Path -LiteralPath $SourceExe)) {
+    Write-UpdateLog 'Starting downloaded exe as fallback.'
+    try { Start-Process -FilePath $SourceExe -WorkingDirectory (Split-Path -Parent $SourceExe) } catch {}
+  } else {
+    try { Start-Process -FilePath $Exe -WorkingDirectory $TargetDir } catch {}
+  }
   exit 1
 }
 """;

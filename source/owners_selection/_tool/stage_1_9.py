@@ -409,6 +409,7 @@ def run_stage_1_1_calibration(owner_timeout: float, verify_timeout: float | None
         return result
     if wait_for_owner_selection(max(6.0, owner_timeout)):
         emit("Owner's Selection ready for Run 1.")
+        human_sleep(0.8, 0.25)
     else:
         emit("Owner's Selection was not restored after calibration.")
         return 6

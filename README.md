@@ -1,8 +1,8 @@
 # City Stamina Spender
 
 <p>
-  <a href="https://github.com/PHai237/City-Stamina-Spender/releases/download/v1.2.14/City.Stamina.Spender.exe">
-    <img alt="Download" src="https://img.shields.io/badge/Download-v1.2.14-3ecfb2?style=for-the-badge">
+  <a href="https://github.com/PHai237/City-Stamina-Spender/releases/download/v1.2.15/City.Stamina.Spender.exe">
+    <img alt="Download" src="https://img.shields.io/badge/Download-v1.2.15-3ecfb2?style=for-the-badge">
   </a>
 </p>
 

@@ -475,6 +475,27 @@ def save_debug_image(
     cv2.imwrite(str(output_path), debug)
 
 
+def save_owner_selection_probe(target: dict, attempt: int, stage_label: str) -> None:
+    debug_dir = WORKSPACE / "stage_1_9_debug" / "owner_selection_probe"
+    debug_dir.mkdir(parents=True, exist_ok=True)
+    full, _ = capture_client_band_color(target["client"], 0.0, 0.0, 1.0, 1.0)
+    owner_title = capture_region(target["client"], OWNER_REGION)
+    stage_title = capture_region(target["client"], TITLE_REGION)
+    stage_list = capture_list(target["client"])
+    safe_stage = stage_label.replace("-", "_")
+    cv2.imwrite(str(debug_dir / f"latest_{safe_stage}_full.png"), full)
+    cv2.imwrite(str(debug_dir / f"latest_{safe_stage}_owner_title.png"), owner_title)
+    cv2.imwrite(str(debug_dir / f"latest_{safe_stage}_selected_title.png"), stage_title)
+    cv2.imwrite(str(debug_dir / f"latest_{safe_stage}_stage_list.png"), stage_list)
+    if attempt <= 3 or attempt % 5 == 0:
+        cv2.imwrite(str(debug_dir / f"attempt_{attempt:02d}_{safe_stage}_full.png"), full)
+        cv2.imwrite(str(debug_dir / f"attempt_{attempt:02d}_{safe_stage}_stage_list.png"), stage_list)
+    log(
+        f"Saved Owner's Selection probe attempt={attempt} "
+        f"stage={stage_label} client={target['client']}"
+    )
+
+
 def find_bottom_action_button(client: dict[str, int]) -> tuple[int, int, float] | None:
     image, region = capture_client_band_color(
         client,
@@ -600,6 +621,8 @@ def wait_for_stage_selected(
     stage_label: str,
 ) -> bool:
     deadline = time.monotonic() + timeout
+    required_hits = 2 if stage_label == "1-1" else 1
+    hits = 0
     while time.monotonic() < deadline:
         title_image = capture_region(client, TITLE_REGION)
         match = None
@@ -613,8 +636,15 @@ def wait_for_stage_selected(
                 match,
                 WORKSPACE / "stage_1_9_debug/verified_stage_title.png",
             )
-            log(f"Verified stage {stage_label} title score={match[3]:.3f}")
-            return True
+            hits += 1
+            log(
+                f"Verified stage {stage_label} title score={match[3]:.3f} "
+                f"hits={hits}/{required_hits}"
+            )
+            if hits >= required_hits:
+                return True
+        else:
+            hits = 0
         human_sleep(0.25, 0.35)
     log(f"Stage {stage_label} title verification timed out")
     return False
@@ -1188,6 +1218,8 @@ def main() -> int:
         if not target:
             print("Khong tim thay cua so NTE sau khi dua len truoc.")
             return 2
+
+        save_owner_selection_probe(target, attempt, stage_label)
 
         if not is_owner_selection_screen(target["client"], owner_template):
             print("Chua o man Owner's Selection nen khong cuon danh sach.")
