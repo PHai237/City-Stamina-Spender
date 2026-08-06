@@ -19,7 +19,7 @@ namespace CityStamina.Avalonia.ViewModels;
 
 public partial class MainViewModel : ViewModelBase
 {
-    public const string AppVersion = "1.2.21";
+    public const string AppVersion = "1.2.22";
     private const string LatestManifestUrl = "https://raw.githubusercontent.com/PHai237/City-Stamina-Spender/main/latest.json";
     private const string StageOneNine = "Stage 1-9";
     private const string StageOneOne = "Stage 1-1";
@@ -40,6 +40,7 @@ public partial class MainViewModel : ViewModelBase
     private readonly string _ownerToolPath;
     private readonly string _ownerToolExePath;
     private readonly string _wrapperLogPath;
+    private readonly string _updateDebugLogPath;
     private readonly bool _preferPythonSource;
     private readonly Queue<string> _uiLogLines = new();
     private readonly object _debugLogLock = new();
@@ -61,6 +62,7 @@ public partial class MainViewModel : ViewModelBase
         _ownerToolPath = Path.Combine(_ownerToolDir, "stage_1_9.py");
         _ownerToolExePath = Path.Combine(_ownerToolDir, "OwnerSelectionTool.exe");
         _wrapperLogPath = Path.Combine(_ownerToolDir, "wrapper_debug", "run.log");
+        _updateDebugLogPath = Path.Combine(EmbeddedAppData.LocalRoot, "update_debug.log");
         _preferPythonSource = IsDevelopmentLayout(_dataDir);
         RefreshHubMetrics();
         _ = CheckUpdateAsync();
@@ -355,6 +357,8 @@ public partial class MainViewModel : ViewModelBase
             );
             AppendSection(report, "UI LOG", LogText);
             AppendFileSection(report, "UPDATE LOG", Path.Combine(_rootDir, "update.log"));
+            AppendFileSection(report, "ROOT UPDATE DEBUG LOG", Path.Combine(_rootDir, "update_debug.log"));
+            AppendFileSection(report, "UPDATE DEBUG LOG", _updateDebugLogPath);
             AppendFileSection(report, "WRAPPER LOG", _wrapperLogPath);
             AppendFileSection(report, "OWNER RUN LOG", Path.Combine(_ownerToolDir, "stage_1_9_debug", "run.log"));
             AppendFileSection(report, "STAGE 1-1 TUNING", Path.Combine(_ownerToolDir, "stage_1_1_tuning.json"));
@@ -367,6 +371,8 @@ public partial class MainViewModel : ViewModelBase
             {
                 AddTextEntry(archive, "debug-report.txt", report.ToString());
                 AddFileIfExists(archive, Path.Combine(_rootDir, "update.log"), "logs/update.log");
+                AddFileIfExists(archive, Path.Combine(_rootDir, "update_debug.log"), "logs/root_update_debug.log");
+                AddFileIfExists(archive, _updateDebugLogPath, "logs/update_debug.log");
                 AddFileIfExists(archive, _wrapperLogPath, "logs/wrapper_run.log");
                 AddFileIfExists(archive, Path.Combine(_ownerToolDir, "stage_1_1_tuning.json"), "stage_1_1_tuning.json");
                 AddDebugDirectoryToZip(archive, Path.Combine(_ownerToolDir, "stage_1_9_debug"), "stage_1_9_debug", ref remainingDebugBytes);
@@ -400,6 +406,7 @@ public partial class MainViewModel : ViewModelBase
     {
         try
         {
+            WriteUpdateDebug("CheckUpdate started current=" + AppVersion);
             UpdateState = "checking";
             UpdateMessage = "Checking for updates...";
             UpdateProgress = 0;
@@ -414,6 +421,7 @@ public partial class MainViewModel : ViewModelBase
 
             LatestVersion = string.IsNullOrWhiteSpace(manifest?.Version) ? AppVersion : manifest.Version.Trim();
             _latestDownloadUrl = manifest?.Url?.Trim() ?? "";
+            WriteUpdateDebug($"CheckUpdate manifest latest={LatestVersion} url={_latestDownloadUrl}");
 
             if (CompareVersions(LatestVersion, AppVersion) > 0 && !string.IsNullOrWhiteSpace(_latestDownloadUrl))
             {
@@ -425,12 +433,14 @@ public partial class MainViewModel : ViewModelBase
             UpdateState = "latest";
             UpdateMessage = "You are on the latest version.";
             UpdateProgress = 100;
+            WriteUpdateDebug("CheckUpdate latest");
         }
-        catch
+        catch (Exception ex)
         {
             UpdateState = "error";
             UpdateMessage = "Could not check updates.";
             UpdateProgress = 0;
+            WriteUpdateDebug("CheckUpdate failed: " + ex);
         }
     }
 
@@ -439,6 +449,7 @@ public partial class MainViewModel : ViewModelBase
     {
         if (UpdateState == "updating")
         {
+            WriteUpdateDebug("Update ignored because another update is running");
             return;
         }
 
@@ -447,6 +458,7 @@ public partial class MainViewModel : ViewModelBase
             UpdateState = "error";
             UpdateMessage = "Stop the automation before updating.";
             UpdateProgress = 0;
+            WriteUpdateDebug("Update blocked because automation is running");
             return;
         }
 
@@ -461,6 +473,7 @@ public partial class MainViewModel : ViewModelBase
 
         try
         {
+            WriteUpdateDebug($"Update started current={AppVersion} latest={LatestVersion} url={_latestDownloadUrl}");
             UpdateState = "updating";
             UpdateMessage = $"Downloading version {LatestVersion}...";
             UpdateProgress = 0;
@@ -469,6 +482,7 @@ public partial class MainViewModel : ViewModelBase
             Directory.CreateDirectory(tempDir);
             var isExeUpdate = _latestDownloadUrl.EndsWith(".exe", StringComparison.OrdinalIgnoreCase);
             var downloadPath = Path.Combine(tempDir, isExeUpdate ? "City Stamina Spender.exe" : "update.zip");
+            WriteUpdateDebug($"Update temp={tempDir} isExe={isExeUpdate} downloadPath={downloadPath}");
 
             using var client = CreateHttpClient();
             await DownloadFileWithRetryAsync(client, _latestDownloadUrl, downloadPath, progress =>
@@ -476,6 +490,7 @@ public partial class MainViewModel : ViewModelBase
                 UpdateProgress = Math.Clamp(progress, 0, 95);
                 UpdateMessage = $"Downloading version {LatestVersion}: {UpdateProgress}%";
             });
+            WriteUpdateDebug($"Update downloaded bytes={new FileInfo(downloadPath).Length}");
 
             string? sourceDir = null;
             if (!isExeUpdate)
@@ -486,8 +501,10 @@ public partial class MainViewModel : ViewModelBase
                 Directory.CreateDirectory(extractDir);
                 ZipFile.ExtractToDirectory(downloadPath, extractDir, overwriteFiles: true);
                 sourceDir = FindExtractedUpdateDirectory(extractDir);
+                WriteUpdateDebug("Update extracted sourceDir=" + sourceDir);
             }
             var scriptPath = WriteUpdaterScript(tempDir, isExeUpdate);
+            WriteUpdateDebug("Update script=" + scriptPath);
 
             var currentExe = Environment.ProcessPath ?? Path.Combine(_rootDir, "City Stamina Spender.exe");
             var args =
@@ -496,7 +513,9 @@ public partial class MainViewModel : ViewModelBase
                 " -Target " + Quote(_rootDir) +
                 " -Exe " + Quote(currentExe) +
                 " -Pid " + Environment.ProcessId.ToString(CultureInfo.InvariantCulture) +
-                " -Temp " + Quote(tempDir);
+                " -Temp " + Quote(tempDir) +
+                " -AppLog " + Quote(_updateDebugLogPath);
+            WriteUpdateDebug("Update launching script args=" + args);
 
             UpdateProgress = 100;
             UpdateMessage = "Installing update...";
@@ -510,6 +529,7 @@ public partial class MainViewModel : ViewModelBase
                 WorkingDirectory = _rootDir,
             });
 
+            WriteUpdateDebug("Update script launched; exiting app");
             Environment.Exit(0);
         }
         catch (Exception ex)
@@ -517,6 +537,7 @@ public partial class MainViewModel : ViewModelBase
             UpdateState = "error";
             UpdateMessage = "Update failed: " + ToUserFriendlyUpdateError(ex);
             UpdateProgress = 0;
+            WriteUpdateDebug("Update failed: " + ex);
         }
     }
 
@@ -922,6 +943,23 @@ public partial class MainViewModel : ViewModelBase
         catch
         {
             // Debug logging must never stop the automation.
+        }
+    }
+
+    private void WriteUpdateDebug(string message)
+    {
+        var line = $"{DateTime.Now:yyyy-MM-dd HH:mm:ss.fff} {message}{Environment.NewLine}";
+        foreach (var path in new[] { _updateDebugLogPath, Path.Combine(_rootDir, "update_debug.log") })
+        {
+            try
+            {
+                Directory.CreateDirectory(Path.GetDirectoryName(path)!);
+                File.AppendAllText(path, line, Encoding.UTF8);
+            }
+            catch
+            {
+                // Update logging must never stop the app.
+            }
         }
     }
 
@@ -1336,7 +1374,8 @@ param(
   [string]$Target,
   [string]$Exe,
   [int]$Pid,
-  [string]$Temp
+  [string]$Temp,
+  [string]$AppLog
 )
 
 $ErrorActionPreference = 'Stop'
@@ -1344,6 +1383,7 @@ $TargetDir = Split-Path -Parent $Exe
 $LogPath = Join-Path $TargetDir 'update.log'
 function Write-UpdateLog([string]$Message) {
   try { Add-Content -LiteralPath $LogPath -Value ((Get-Date -Format 'yyyy-MM-dd HH:mm:ss') + ' ' + $Message) -Encoding UTF8 } catch {}
+  try { if ($AppLog) { Add-Content -LiteralPath $AppLog -Value ((Get-Date -Format 'yyyy-MM-dd HH:mm:ss') + ' ' + $Message) -Encoding UTF8 } } catch {}
 }
 
 try {
@@ -1406,7 +1446,8 @@ param(
   [string]$Target,
   [string]$Exe,
   [int]$Pid,
-  [string]$Temp
+  [string]$Temp,
+  [string]$AppLog
 )
 
 $ErrorActionPreference = 'Stop'
@@ -1414,6 +1455,7 @@ $TargetDir = Split-Path -Parent $Exe
 $LogPath = Join-Path $TargetDir 'update.log'
 function Write-UpdateLog([string]$Message) {
   try { Add-Content -LiteralPath $LogPath -Value ((Get-Date -Format 'yyyy-MM-dd HH:mm:ss') + ' ' + $Message) -Encoding UTF8 } catch {}
+  try { if ($AppLog) { Add-Content -LiteralPath $AppLog -Value ((Get-Date -Format 'yyyy-MM-dd HH:mm:ss') + ' ' + $Message) -Encoding UTF8 } } catch {}
 }
 
 try {
