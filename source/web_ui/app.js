@@ -21,8 +21,8 @@ const state = {
   isDetailVisible: false,
   isRunning: false,
   stageDropdownOpen: false,
-  currentVersion: "1.2.25",
-  latestVersion: "1.2.25",
+  currentVersion: "1.2.26",
+  latestVersion: "1.2.26",
   updateState: "checking",
   updateMessage: "Checking for updates...",
   updateProgress: 0,
@@ -86,6 +86,7 @@ function header() {
   const updateText = state.updateState === "updating"
     ? `${Math.max(0, Math.min(100, Number(state.updateProgress) || 0))}%`
     : "Update";
+  const updateDisabled = state.updateState === "checking" || state.updateState === "updating";
   const showUpdatePopup = state.updateState === "available" || state.updateState === "error" || state.updateState === "updating";
   const updateTitle = state.updateState === "available"
     ? "Update available"
@@ -105,7 +106,7 @@ function header() {
           <input id="searchInput" class="search-input" value="${escapeHtml(state.searchQuery)}" placeholder="Search automations" />
         </div>
         <div class="update-wrap">
-          <button id="updateButton" class="update-button">${escapeHtml(updateText)}</button>
+          <button id="updateButton" class="update-button" ${updateDisabled ? "disabled" : ""}>${escapeHtml(updateText)}</button>
           <button id="updateIndicator" class="update-indicator ${indicatorClass}" title="${escapeHtml(state.updateMessage)}">${indicatorText}</button>
           ${showUpdatePopup ? `
             <div class="update-popover ${state.updateState === "updating" ? "updating" : ""}">

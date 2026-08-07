@@ -127,7 +127,7 @@ ORDER_TEMPLATES = [
     ItemTemplate(1, "black_coffee", "Black coffee", ORDER_ASSET_DIR / "01_black_coffee_order_icon.png", 0.82),
     ItemTemplate(2, "white_coffee", "White coffee", ORDER_ASSET_DIR / "02_white_coffee_order_icon.png", 0.84),
     ItemTemplate(3, "sandwich", "Sandwich", ORDER_ASSET_DIR / "03_sandwich_order_icon.png", 0.84),
-    ItemTemplate(4, "croissant", "Croissant", ORDER_ASSET_DIR / "04_croissant_order_icon.png", 0.90),
+    ItemTemplate(4, "croissant", "Croissant", ORDER_ASSET_DIR / "04_croissant_order_icon.png", 0.86, 0.01),
     ItemTemplate(5, "cupcake", "Cupcake", ORDER_ASSET_DIR / "05_cupcake_order_icon.png"),
     ItemTemplate(6, "tomato_juice", "Tomato juice", ORDER_ASSET_DIR / "06_tomato_juice_order_icon.png", 0.80, 0.03),
     ItemTemplate(6, "tomato_juice_bubble", "Tomato juice", ORDER_ASSET_DIR / "06_tomato_juice_order.png", 0.72, 0.08),
@@ -166,7 +166,7 @@ def candidate_scales(client: dict[str, int], item: ItemTemplate) -> tuple[float,
         elif item.item_id in (1, 2, 6):
             multipliers = (0.72, 0.92, 1.0, 1.16)
         else:
-            multipliers = (0.72, 0.88, 1.0, 1.14)
+            multipliers = (0.64, 0.76, 0.88, 1.0, 1.14, 1.28)
     else:
         multipliers = (0.78, 0.93, 1.0, 1.2) if item.item_id == 2 else (0.78, 0.93, 1.0)
     return tuple(sorted({round(base * multiplier, 3) for multiplier in multipliers}))
@@ -406,9 +406,9 @@ def match_conflicts(a: ItemMatch, b: ItemMatch, overlap_threshold: float) -> boo
 
 def better_match(candidate: ItemMatch, existing: ItemMatch) -> bool:
     if candidate.item.item_id == 6 and existing.item.item_id == 4:
-        return rank_match(candidate) >= existing.score - 0.08
+        return rank_match(candidate) >= rank_match(existing) - 0.04
     if candidate.item.item_id == 4 and existing.item.item_id == 6:
-        return rank_match(candidate) > rank_match(existing) + 0.12
+        return rank_match(candidate) > rank_match(existing) + 0.06
 
     item_pair = {candidate.item.item_id, existing.item.item_id}
     if item_pair == {4, 6}:

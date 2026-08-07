@@ -1,5 +1,5 @@
 {
-  "version": "1.2.25",
-  "url": "https://github.com/PHai237/City-Stamina-Spender/releases/download/v1.2.25/City.Stamina.Spender.exe",
-  "notes": "Reject false Stage 1-1 matches in the stage 2 list and sync both exe names during update."
+  "version": "1.2.26",
+  "url": "https://github.com/PHai237/City-Stamina-Spender/releases/download/v1.2.26/City.Stamina.Spender.exe",
+  "notes": "Prevent repeated update clicks, include Stage 1-1 scan images in debug packages, and improve croissant detection."
 }

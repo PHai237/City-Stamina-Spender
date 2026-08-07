@@ -19,7 +19,7 @@ namespace CityStamina.Avalonia.ViewModels;
 
 public partial class MainViewModel : ViewModelBase
 {
-    public const string AppVersion = "1.2.25";
+    public const string AppVersion = "1.2.26";
     private const string LatestManifestUrl = "https://raw.githubusercontent.com/PHai237/City-Stamina-Spender/main/latest.json";
     private const string StageOneNine = "Stage 1-9";
     private const string StageOneOne = "Stage 1-1";
@@ -44,6 +44,7 @@ public partial class MainViewModel : ViewModelBase
     private readonly string _ownerToolExePath;
     private readonly string _wrapperLogPath;
     private readonly string _updateDebugLogPath;
+    private readonly string _updatePendingPath;
     private readonly bool _preferPythonSource;
     private readonly Queue<string> _uiLogLines = new();
     private readonly object _debugLogLock = new();
@@ -66,6 +67,7 @@ public partial class MainViewModel : ViewModelBase
         _ownerToolExePath = Path.Combine(_ownerToolDir, "OwnerSelectionTool.exe");
         _wrapperLogPath = Path.Combine(_ownerToolDir, "wrapper_debug", "run.log");
         _updateDebugLogPath = Path.Combine(EmbeddedAppData.LocalRoot, "update_debug.log");
+        _updatePendingPath = Path.Combine(EmbeddedAppData.LocalRoot, "update_pending.txt");
         _preferPythonSource = IsDevelopmentLayout(_dataDir);
         RefreshHubMetrics();
         _ = CheckUpdateAsync();
@@ -378,8 +380,8 @@ public partial class MainViewModel : ViewModelBase
                 AddFileIfExists(archive, _updateDebugLogPath, "logs/update_debug.log");
                 AddFileIfExists(archive, _wrapperLogPath, "logs/wrapper_run.log");
                 AddFileIfExists(archive, Path.Combine(_ownerToolDir, "stage_1_1_tuning.json"), "stage_1_1_tuning.json");
-                AddDebugDirectoryToZip(archive, Path.Combine(_ownerToolDir, "stage_1_9_debug"), "stage_1_9_debug", ref remainingDebugBytes, DiscordDebugPackageMaxFilesPerFolder);
                 AddDebugDirectoryToZip(archive, Path.Combine(_ownerToolDir, "stage_1_1_debug"), "stage_1_1_debug", ref remainingDebugBytes, DiscordDebugPackageMaxFilesPerFolder);
+                AddDebugDirectoryToZip(archive, Path.Combine(_ownerToolDir, "stage_1_9_debug"), "stage_1_9_debug", ref remainingDebugBytes, DiscordDebugPackageMaxFilesPerFolder);
                 AddDebugDirectoryToZip(archive, Path.Combine(_ownerToolDir, "gameplay_exit_debug"), "gameplay_exit_debug", ref remainingDebugBytes, DiscordDebugPackageMaxFilesPerFolder);
             }
 
@@ -426,6 +428,14 @@ public partial class MainViewModel : ViewModelBase
             LatestVersion = string.IsNullOrWhiteSpace(manifest?.Version) ? AppVersion : manifest.Version.Trim();
             _latestDownloadUrl = manifest?.Url?.Trim() ?? "";
             WriteUpdateDebug($"CheckUpdate manifest latest={LatestVersion} url={_latestDownloadUrl}");
+            if (IsRecentPendingUpdate(LatestVersion))
+            {
+                UpdateState = "updating";
+                UpdateMessage = $"Installing version {LatestVersion}. Please wait a moment.";
+                UpdateProgress = 100;
+                WriteUpdateDebug("CheckUpdate blocked by recent pending update marker.");
+                return;
+            }
 
             if (CompareVersions(LatestVersion, AppVersion) > 0 && !string.IsNullOrWhiteSpace(_latestDownloadUrl))
             {
@@ -511,6 +521,8 @@ public partial class MainViewModel : ViewModelBase
             WriteUpdateDebug("Update script=" + scriptPath);
 
             var currentExe = Environment.ProcessPath ?? Path.Combine(_rootDir, "City Stamina Spender.exe");
+            WriteUpdateDebug("Update currentExe=" + currentExe);
+            WritePendingUpdateMarker(LatestVersion);
             var args =
                 "-NoProfile -ExecutionPolicy Bypass -File " + Quote(scriptPath) +
                 " -Source " + Quote(sourceDir ?? tempDir) +
@@ -518,7 +530,8 @@ public partial class MainViewModel : ViewModelBase
                 " -Exe " + Quote(currentExe) +
                 " -Pid " + Environment.ProcessId.ToString(CultureInfo.InvariantCulture) +
                 " -Temp " + Quote(tempDir) +
-                " -AppLog " + Quote(_updateDebugLogPath);
+                " -AppLog " + Quote(_updateDebugLogPath) +
+                " -PendingMarker " + Quote(_updatePendingPath);
             WriteUpdateDebug("Update launching script args=" + args);
 
             UpdateProgress = 100;
@@ -526,9 +539,10 @@ public partial class MainViewModel : ViewModelBase
 
             Process.Start(new ProcessStartInfo
             {
-                FileName = "powershell",
+                FileName = Path.Combine(Environment.SystemDirectory, "WindowsPowerShell", "v1.0", "powershell.exe"),
                 Arguments = args,
-                UseShellExecute = true,
+                UseShellExecute = false,
+                CreateNoWindow = true,
                 WindowStyle = ProcessWindowStyle.Hidden,
                 WorkingDirectory = _rootDir,
             });
@@ -967,6 +981,61 @@ public partial class MainViewModel : ViewModelBase
         }
     }
 
+    private void WritePendingUpdateMarker(string version)
+    {
+        try
+        {
+            Directory.CreateDirectory(Path.GetDirectoryName(_updatePendingPath)!);
+            File.WriteAllText(
+                _updatePendingPath,
+                version.Trim() + "|" + DateTime.UtcNow.Ticks.ToString(CultureInfo.InvariantCulture),
+                Encoding.UTF8
+            );
+            WriteUpdateDebug("Pending update marker written for version=" + version);
+        }
+        catch (Exception ex)
+        {
+            WriteUpdateDebug("Could not write pending update marker: " + ex.Message);
+        }
+    }
+
+    private bool IsRecentPendingUpdate(string latestVersion)
+    {
+        try
+        {
+            if (!File.Exists(_updatePendingPath))
+            {
+                return false;
+            }
+
+            var parts = File.ReadAllText(_updatePendingPath, Encoding.UTF8).Split('|');
+            if (parts.Length < 2 || !parts[0].Equals(latestVersion.Trim(), StringComparison.OrdinalIgnoreCase))
+            {
+                return false;
+            }
+
+            if (!long.TryParse(parts[1], NumberStyles.Integer, CultureInfo.InvariantCulture, out var ticks))
+            {
+                return false;
+            }
+
+            var age = DateTime.UtcNow - new DateTime(ticks, DateTimeKind.Utc);
+            if (age <= TimeSpan.FromMinutes(3))
+            {
+                return true;
+            }
+
+            try { File.Delete(_updatePendingPath); } catch { }
+            WriteUpdateDebug("Expired pending update marker cleared.");
+            return false;
+        }
+        catch (Exception ex)
+        {
+            WriteUpdateDebug("Could not read pending update marker: " + ex.Message);
+            return false;
+        }
+    }
+
     private static void AppendSection(StringBuilder builder, string title, string content)
     {
         builder.AppendLine("==== " + title + " ====");
@@ -1381,7 +1450,8 @@ param(
   [string]$Exe,
   [int]$Pid,
   [string]$Temp,
-  [string]$AppLog
+  [string]$AppLog,
+  [string]$PendingMarker
 )
 
 $ErrorActionPreference = 'Stop'
@@ -1445,9 +1515,11 @@ try {
   Start-Process -FilePath $Exe -WorkingDirectory $TargetDir
   Start-Sleep -Seconds 2
   try { Remove-Item -LiteralPath $Temp -Recurse -Force } catch {}
+  try { if ($PendingMarker) { Remove-Item -LiteralPath $PendingMarker -Force } } catch {}
   Write-UpdateLog 'Updater finished.'
 } catch {
   Write-UpdateLog ('Updater failed: ' + $_.Exception.Message)
+  try { if ($PendingMarker) { Remove-Item -LiteralPath $PendingMarker -Force } } catch {}
   if ($SourceExe -and (Test-Path -LiteralPath $SourceExe)) {
     Write-UpdateLog 'Starting downloaded exe as fallback.'
     try { Start-Process -FilePath $SourceExe -WorkingDirectory (Split-Path -Parent $SourceExe) } catch {}
@@ -1464,7 +1536,8 @@ param(
   [string]$Exe,
   [int]$Pid,
   [string]$Temp,
-  [string]$AppLog
+  [string]$AppLog,
+  [string]$PendingMarker
 )
 
 $ErrorActionPreference = 'Stop'
@@ -1543,9 +1616,11 @@ try {
   Start-Process -FilePath $Exe -WorkingDirectory $TargetDir
   Start-Sleep -Seconds 2
   try { Remove-Item -LiteralPath $Temp -Recurse -Force } catch {}
+  try { if ($PendingMarker) { Remove-Item -LiteralPath $PendingMarker -Force } } catch {}
   Write-UpdateLog 'Updater finished.'
 } catch {
   Write-UpdateLog ('Updater failed: ' + $_.Exception.Message)
+  try { if ($PendingMarker) { Remove-Item -LiteralPath $PendingMarker -Force } } catch {}
   if ($SourceExe -and (Test-Path -LiteralPath $SourceExe)) {
     Write-UpdateLog 'Starting downloaded exe as fallback.'
     try { Start-Process -FilePath $SourceExe -WorkingDirectory (Split-Path -Parent $SourceExe) } catch {}
