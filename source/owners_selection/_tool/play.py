@@ -1252,23 +1252,6 @@ def main() -> int:
         if args.open_support_only:
             return 0 if open_support_employee_page_only(target) else 7
 
-        if args.stage == "1-1":
-            select_stage_one_one_from_top(target, args.wheel_steps)
-            stable_timeout = max(args.verify_timeout or 1.5, 1.5)
-            if not wait_for_stage_selected(
-                target["client"],
-                title_template,
-                title_number_template,
-                args.verify_threshold,
-                stable_timeout,
-                stage_label,
-            ):
-                print(f"Could not verify selected stage {stage_label}. Did not click Open Shop.")
-                return 5
-            print(f"Verified selected stage {stage_label} before Open Shop.")
-            if args.select_stage_only:
-                return 0
-            return open_shop_and_monitor(target, args)
 
         if args.stage != "1-1" and selected_stage(
             target["client"],
@@ -1322,7 +1305,7 @@ def main() -> int:
                 log(f"Found match score={score:.3f} click=({click_x},{click_y})")
                 fast_click(target["hwnd"], click_x, click_y, focus_delay=0.03)
                 print(f"Clicked stage {stage_label}.")
-                verify_timeout = min(args.verify_timeout, 1.0) if args.stage == "1-1" else args.verify_timeout
+                verify_timeout = max(args.verify_timeout or 1.5, 1.5)
                 if not wait_for_stage_selected(
                     target["client"],
                     title_template,

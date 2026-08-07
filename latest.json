@@ -1,5 +1,5 @@
 {
-  "version": "1.2.23",
-  "url": "https://github.com/PHai237/City-Stamina-Spender/releases/download/v1.2.23/City.Stamina.Spender.exe",
-  "notes": "Keep Discord debug packages under webhook upload limits."
+  "version": "1.2.24",
+  "url": "https://github.com/PHai237/City-Stamina-Spender/releases/download/v1.2.24/City.Stamina.Spender.exe",
+  "notes": "Select Stage 1-1 by visual matching instead of fixed top-list clicks."
 }
