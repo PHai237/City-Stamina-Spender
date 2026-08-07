@@ -71,10 +71,10 @@ if errorlevel 1 (
   exit /b 1
 )
 
-copy /Y "webview_publish\CityStamina.Avalonia.exe" "..\City Stamina Spender.exe" >nul
+copy /Y "webview_publish\CityStamina.Avalonia.exe" "..\City.Stamina.Spender.exe" >nul
 del /Q "webview_publish\*.pdb" >nul 2>&1
 del /Q "build\*.spec" >nul 2>&1
 
-echo Done: City Stamina Spender.exe
-echo Release layout is one file: City Stamina Spender.exe
+echo Done: City.Stamina.Spender.exe
+echo Release layout is one file: City.Stamina.Spender.exe
 pause
