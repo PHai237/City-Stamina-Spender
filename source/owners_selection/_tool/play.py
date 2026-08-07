@@ -327,14 +327,28 @@ def find_stage_in_list(
     if number_template is not None:
         number_match = find_template_multiscale(image, number_template, 0.65)
         if number_match:
-            log(f"Matched stage {stage_label} number score={number_match[3]:.3f}")
-            return number_match
+            location, _, _, score = number_match
+            if stage_label == "1-1" and location[1] > image.shape[0] * 0.58:
+                log(
+                    f"Rejected stage {stage_label} number match below first category "
+                    f"score={score:.3f} y={location[1]} height={image.shape[0]}"
+                )
+            else:
+                log(f"Matched stage {stage_label} number score={score:.3f}")
+                return number_match
         best_number = find_template_multiscale(image, number_template, 0.0)
         if best_number:
             log(f"Stage {stage_label} number best_score={best_number[3]:.3f}")
 
     scaled_template = scale_template(label_template, client)
-    return find_template(image, scaled_template, threshold)
+    label_match = find_template(image, scaled_template, threshold)
+    if label_match and stage_label == "1-1" and label_match[0][1] > image.shape[0] * 0.58:
+        log(
+            f"Rejected stage {stage_label} label match below first category "
+            f"score={label_match[3]:.3f} y={label_match[0][1]} height={image.shape[0]}"
+        )
+        return None
+    return label_match
 
 
 def focus_window(hwnd: int, settle: float = 0.5) -> None:

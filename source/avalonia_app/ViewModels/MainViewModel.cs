@@ -19,7 +19,7 @@ namespace CityStamina.Avalonia.ViewModels;
 
 public partial class MainViewModel : ViewModelBase
 {
-    public const string AppVersion = "1.2.24";
+    public const string AppVersion = "1.2.25";
     private const string LatestManifestUrl = "https://raw.githubusercontent.com/PHai237/City-Stamina-Spender/main/latest.json";
     private const string StageOneNine = "Stage 1-9";
     private const string StageOneOne = "Stage 1-1";
@@ -1431,6 +1431,17 @@ try {
   }
 
   try { Remove-Item -LiteralPath $NewExe -Force } catch {}
+  foreach ($AltName in @('City.Stamina.Spender.exe', 'City Stamina Spender.exe')) {
+    $AltExe = Join-Path $TargetDir $AltName
+    if ($AltExe -ne $Exe) {
+      try {
+        Copy-Item -LiteralPath $SourceExe -Destination $AltExe -Force
+        Write-UpdateLog ('Synced alternate exe: ' + $AltExe)
+      } catch {
+        Write-UpdateLog ('Alternate exe sync skipped: ' + $AltExe + ' | ' + $_.Exception.Message)
+      }
+    }
+  }
   Start-Process -FilePath $Exe -WorkingDirectory $TargetDir
   Start-Sleep -Seconds 2
   try { Remove-Item -LiteralPath $Temp -Recurse -Force } catch {}
@@ -1518,6 +1529,17 @@ try {
   }
 
   try { Remove-Item -LiteralPath $NewExe -Force } catch {}
+  foreach ($AltName in @('City.Stamina.Spender.exe', 'City Stamina Spender.exe')) {
+    $AltExe = Join-Path $TargetDir $AltName
+    if ($AltExe -ne $Exe) {
+      try {
+        Copy-Item -LiteralPath $SourceExe -Destination $AltExe -Force
+        Write-UpdateLog ('Synced alternate exe: ' + $AltExe)
+      } catch {
+        Write-UpdateLog ('Alternate exe sync skipped: ' + $AltExe + ' | ' + $_.Exception.Message)
+      }
+    }
+  }
   Start-Process -FilePath $Exe -WorkingDirectory $TargetDir
   Start-Sleep -Seconds 2
   try { Remove-Item -LiteralPath $Temp -Recurse -Force } catch {}
