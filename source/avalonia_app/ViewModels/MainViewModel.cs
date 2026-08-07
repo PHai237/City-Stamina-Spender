@@ -19,11 +19,14 @@ namespace CityStamina.Avalonia.ViewModels;
 
 public partial class MainViewModel : ViewModelBase
 {
-    public const string AppVersion = "1.2.22";
+    public const string AppVersion = "1.2.23";
     private const string LatestManifestUrl = "https://raw.githubusercontent.com/PHai237/City-Stamina-Spender/main/latest.json";
     private const string StageOneNine = "Stage 1-9";
     private const string StageOneOne = "Stage 1-1";
     private const int MaxUiLogLines = 14;
+    private const long DiscordDebugPackageBudgetBytes = 6_500_000L;
+    private const long DiscordUploadLimitBytes = 7_500_000L;
+    private const int DiscordDebugPackageMaxFilesPerFolder = 35;
 
     private sealed record AutomationModule(string Id, string Name, string Category, bool IsReady);
     private sealed record UpdateManifest(string? Version, string? Url, string? Notes);
@@ -366,7 +369,7 @@ public partial class MainViewModel : ViewModelBase
             AppendDirectorySummary(report, "STAGE 1-1 DEBUG FILES", Path.Combine(_ownerToolDir, "stage_1_1_debug"));
             AppendDirectorySummary(report, "GAMEPLAY EXIT DEBUG FILES", Path.Combine(_ownerToolDir, "gameplay_exit_debug"));
 
-            var remainingDebugBytes = 22_000_000L;
+            var remainingDebugBytes = DiscordDebugPackageBudgetBytes;
             using (var archive = ZipFile.Open(packagePath, ZipArchiveMode.Create))
             {
                 AddTextEntry(archive, "debug-report.txt", report.ToString());
@@ -375,13 +378,14 @@ public partial class MainViewModel : ViewModelBase
                 AddFileIfExists(archive, _updateDebugLogPath, "logs/update_debug.log");
                 AddFileIfExists(archive, _wrapperLogPath, "logs/wrapper_run.log");
                 AddFileIfExists(archive, Path.Combine(_ownerToolDir, "stage_1_1_tuning.json"), "stage_1_1_tuning.json");
-                AddDebugDirectoryToZip(archive, Path.Combine(_ownerToolDir, "stage_1_9_debug"), "stage_1_9_debug", ref remainingDebugBytes);
-                AddDebugDirectoryToZip(archive, Path.Combine(_ownerToolDir, "stage_1_1_debug"), "stage_1_1_debug", ref remainingDebugBytes);
-                AddDebugDirectoryToZip(archive, Path.Combine(_ownerToolDir, "gameplay_exit_debug"), "gameplay_exit_debug", ref remainingDebugBytes);
+                AddDebugDirectoryToZip(archive, Path.Combine(_ownerToolDir, "stage_1_9_debug"), "stage_1_9_debug", ref remainingDebugBytes, DiscordDebugPackageMaxFilesPerFolder);
+                AddDebugDirectoryToZip(archive, Path.Combine(_ownerToolDir, "stage_1_1_debug"), "stage_1_1_debug", ref remainingDebugBytes, DiscordDebugPackageMaxFilesPerFolder);
+                AddDebugDirectoryToZip(archive, Path.Combine(_ownerToolDir, "gameplay_exit_debug"), "gameplay_exit_debug", ref remainingDebugBytes, DiscordDebugPackageMaxFilesPerFolder);
             }
 
-            AppendLog("Debug package saved to Desktop.");
-            WriteWrapperDebug("debug", "Exported debug package: " + packagePath);
+            var packageSize = new FileInfo(packagePath).Length;
+            AppendLog($"Debug package saved to Desktop ({packageSize / 1024.0 / 1024.0:0.0} MB).");
+            WriteWrapperDebug("debug", $"Exported debug package: {packagePath} bytes={packageSize}");
             if (TryReadDiscordWebhook(out var webhookUrl))
             {
                 AppendLog("Sending debug package to Discord...");
@@ -1076,9 +1080,11 @@ public partial class MainViewModel : ViewModelBase
         {
             throw new FileNotFoundException("Debug package was not found.", packagePath);
         }
-        if (fileInfo.Length > 24_000_000)
+        if (fileInfo.Length > DiscordUploadLimitBytes)
         {
-            throw new InvalidOperationException("Debug package is too large for Discord. Please send the zip manually.");
+            throw new InvalidOperationException(
+                $"Debug package is too large for this Discord webhook ({fileInfo.Length / 1024.0 / 1024.0:0.0} MB). Please send the zip manually."
+            );
         }
 
         using var client = CreateHttpClient();

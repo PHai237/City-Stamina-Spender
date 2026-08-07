@@ -1,5 +1,5 @@
 {
-  "version": "1.2.22",
-  "url": "https://github.com/PHai237/City-Stamina-Spender/releases/download/v1.2.22/City.Stamina.Spender.exe",
-  "notes": "Persist update diagnostics before and during updater handoff."
+  "version": "1.2.23",
+  "url": "https://github.com/PHai237/City-Stamina-Spender/releases/download/v1.2.23/City.Stamina.Spender.exe",
+  "notes": "Keep Discord debug packages under webhook upload limits."
 }
