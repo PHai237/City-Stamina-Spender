@@ -3,6 +3,7 @@ import 'dart:convert';
 import 'dart:io';
 
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:http/http.dart' as http;
 import 'package:path/path.dart' as p;
 import 'package:path_provider/path_provider.dart';
@@ -252,6 +253,44 @@ class OwnerAutomationController {
   }
 }
 
+class AndroidOverlayController {
+  AndroidOverlayController(this.log);
+
+  static const _channel = MethodChannel('city_stamina_mobile/overlay');
+  final MobileLogService log;
+
+  Future<bool> canDrawOverlays() async {
+    if (!Platform.isAndroid) return false;
+    return await _channel.invokeMethod<bool>('canDrawOverlays') ?? false;
+  }
+
+  Future<void> openOverlaySettings() async {
+    if (!Platform.isAndroid) return;
+    await _channel.invokeMethod<void>('openOverlaySettings');
+    log.info('Opened Android overlay permission settings.');
+  }
+
+  Future<void> startOverlay() async {
+    if (!Platform.isAndroid) {
+      log.warn('Floating button is Android-only.');
+      return;
+    }
+    await _channel.invokeMethod<void>('startOverlay');
+    log.info('Floating button started.');
+  }
+
+  Future<void> stopOverlay() async {
+    if (!Platform.isAndroid) return;
+    await _channel.invokeMethod<void>('stopOverlay');
+    log.info('Floating button stopped.');
+  }
+
+  Future<void> setRunning(bool running) async {
+    if (!Platform.isAndroid) return;
+    await _channel.invokeMethod<void>('setRunning', {'running': running});
+  }
+}
+
 class AutomationHubPage extends StatefulWidget {
   const AutomationHubPage({super.key});
 
@@ -382,13 +421,18 @@ class OwnerSelectionPage extends StatefulWidget {
 class _OwnerSelectionPageState extends State<OwnerSelectionPage> {
   final _log = MobileLogService.instance;
   late final OwnerAutomationController _controller;
+  late final AndroidOverlayController _overlayController;
   final _amountController = TextEditingController();
   String _stage = '1-9';
+  bool _overlayVisible = false;
+  bool _overlayPermissionGranted = false;
 
   @override
   void initState() {
     super.initState();
     _controller = OwnerAutomationController(_log);
+    _overlayController = AndroidOverlayController(_log);
+    unawaited(_refreshOverlayPermission());
   }
 
   @override
@@ -442,11 +486,13 @@ class _OwnerSelectionPageState extends State<OwnerSelectionPage> {
                           onPressed: () {
                             if (running) {
                               _controller.stop();
+                              unawaited(_overlayController.setRunning(false));
                             } else {
                               _controller.start(
                                 amount: _amountController.text,
                                 stage: _stage,
                               );
+                              unawaited(_overlayController.setRunning(true));
                             }
                           },
                           style: FilledButton.styleFrom(
@@ -459,6 +505,19 @@ class _OwnerSelectionPageState extends State<OwnerSelectionPage> {
                         );
                       },
                     ),
+                    const SizedBox(height: 10),
+                    OutlinedButton.icon(
+                      onPressed: _toggleOverlay,
+                      icon: Icon(_overlayVisible ? Icons.visibility_off_rounded : Icons.open_in_new_rounded),
+                      label: Text(_overlayVisible ? 'Hide floating button' : 'Show floating button'),
+                    ),
+                    const SizedBox(height: 8),
+                    Text(
+                      _overlayPermissionGranted
+                          ? 'Floating permission is ready.'
+                          : 'Floating permission is needed on Android.',
+                      style: const TextStyle(color: AppColors.muted, fontSize: 12),
+                    ),
                   ],
                 ),
               ),
@@ -469,6 +528,48 @@ class _OwnerSelectionPageState extends State<OwnerSelectionPage> {
         ),
       ),
     );
+  }
+
+  Future<void> _refreshOverlayPermission() async {
+    final granted = await _overlayController.canDrawOverlays();
+    if (!mounted) return;
+    setState(() => _overlayPermissionGranted = granted);
+  }
+
+  Future<void> _toggleOverlay() async {
+    try {
+      if (_overlayVisible) {
+        await _overlayController.stopOverlay();
+        if (!mounted) return;
+        setState(() => _overlayVisible = false);
+        return;
+      }
+
+      final granted = await _overlayController.canDrawOverlays();
+      if (!granted) {
+        await _overlayController.openOverlaySettings();
+        if (!mounted) return;
+        setState(() => _overlayPermissionGranted = false);
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('Enable Draw over other apps, then return here.')),
+        );
+        return;
+      }
+
+      await _overlayController.startOverlay();
+      await _overlayController.setRunning(_controller.isRunning.value);
+      if (!mounted) return;
+      setState(() {
+        _overlayPermissionGranted = true;
+        _overlayVisible = true;
+      });
+    } catch (error) {
+      _log.error('Floating button failed: $error');
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('Floating button failed: $error')),
+      );
+    }
   }
 }
 

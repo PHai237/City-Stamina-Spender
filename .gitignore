@@ -46,3 +46,4 @@ source/modules/owners_selection/_tool/support_test_status.txt
 
 # Packaged binaries go to GitHub Releases, not git commits
 *.exe
+*.apk
