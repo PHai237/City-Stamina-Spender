@@ -20,6 +20,7 @@ class OverlayService : Service() {
         const val ACTION_HIDE = "city_stamina_mobile.overlay.HIDE"
         const val ACTION_SET_RUNNING = "city_stamina_mobile.overlay.SET_RUNNING"
         const val ACTION_SET_IDLE = "city_stamina_mobile.overlay.SET_IDLE"
+        const val ACTION_TOGGLE_REQUEST = "city_stamina_mobile.overlay.TOGGLE_REQUEST"
     }
 
     private lateinit var windowManager: WindowManager
@@ -85,6 +86,7 @@ class OverlayService : Service() {
         view.setOnClickListener {
             isRunning = !isRunning
             updateOverlayText()
+            sendBroadcast(Intent(ACTION_TOGGLE_REQUEST).putExtra("running", isRunning))
             Toast.makeText(this, if (isRunning) "Run" else "Stop", Toast.LENGTH_SHORT).show()
         }
 

@@ -1,14 +1,22 @@
 package com.example.city_stamina_mobile
 
+import android.content.BroadcastReceiver
+import android.content.Context
 import android.content.Intent
+import android.content.IntentFilter
 import android.net.Uri
+import android.os.Build
 import android.provider.Settings
 import io.flutter.embedding.android.FlutterActivity
 import io.flutter.embedding.engine.FlutterEngine
+import io.flutter.plugin.common.EventChannel
 import io.flutter.plugin.common.MethodChannel
 
 class MainActivity : FlutterActivity() {
     private val channelName = "city_stamina_mobile/overlay"
+    private val eventsChannelName = "city_stamina_mobile/overlay_events"
+    private var overlayEventSink: EventChannel.EventSink? = null
+    private var overlayReceiver: BroadcastReceiver? = null
 
     override fun configureFlutterEngine(flutterEngine: FlutterEngine) {
         super.configureFlutterEngine(flutterEngine)
@@ -44,6 +52,55 @@ class MainActivity : FlutterActivity() {
                 }
                 else -> result.notImplemented()
             }
+        }
+
+        EventChannel(flutterEngine.dartExecutor.binaryMessenger, eventsChannelName).setStreamHandler(
+            object : EventChannel.StreamHandler {
+                override fun onListen(arguments: Any?, events: EventChannel.EventSink?) {
+                    overlayEventSink = events
+                    registerOverlayReceiver()
+                }
+
+                override fun onCancel(arguments: Any?) {
+                    unregisterOverlayReceiver()
+                    overlayEventSink = null
+                }
+            }
+        )
+    }
+
+    override fun onDestroy() {
+        unregisterOverlayReceiver()
+        super.onDestroy()
+    }
+
+    private fun registerOverlayReceiver() {
+        if (overlayReceiver != null) return
+        overlayReceiver = object : BroadcastReceiver() {
+            override fun onReceive(context: Context?, intent: Intent?) {
+                if (intent?.action != OverlayService.ACTION_TOGGLE_REQUEST) return
+                overlayEventSink?.success(
+                    mapOf(
+                        "type" to "toggle",
+                        "running" to intent.getBooleanExtra("running", false)
+                    )
+                )
+            }
+        }
+
+        val filter = IntentFilter(OverlayService.ACTION_TOGGLE_REQUEST)
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+            registerReceiver(overlayReceiver, filter, Context.RECEIVER_NOT_EXPORTED)
+        } else {
+            @Suppress("DEPRECATION")
+            registerReceiver(overlayReceiver, filter)
+        }
+    }
+
+    private fun unregisterOverlayReceiver() {
+        overlayReceiver?.let {
+            unregisterReceiver(it)
+            overlayReceiver = null
         }
     }
 }

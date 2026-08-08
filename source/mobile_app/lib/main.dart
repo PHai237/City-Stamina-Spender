@@ -7,6 +7,7 @@ import 'package:flutter/services.dart';
 import 'package:http/http.dart' as http;
 import 'package:path/path.dart' as p;
 import 'package:path_provider/path_provider.dart';
+import 'package:url_launcher/url_launcher.dart';
 
 void main() {
   runApp(const CityStaminaMobileApp());
@@ -48,6 +49,12 @@ class AppColors {
   static const text = Color(0xFFF7FAFF);
   static const muted = Color(0xFFA7B5D1);
   static const border = Color(0xFF2B3A58);
+}
+
+class AppInfo {
+  static const version = '1.0.0';
+  static const androidApkUrl =
+      'https://github.com/PHai237/City-Stamina-Spender/releases/latest/download/City.Stamina.Mobile.apk';
 }
 
 class MobileLogService {
@@ -171,7 +178,7 @@ class DebugPackageService {
   Future<String> _buildReport() async {
     final buffer = StringBuffer()
       ..writeln('City Stamina Mobile debug report')
-      ..writeln('Version: 1.0.0')
+      ..writeln('Version: ${AppInfo.version}')
       ..writeln('Created: ${DateTime.now().toIso8601String()}')
       ..writeln('Platform: ${Platform.operatingSystem} ${Platform.operatingSystemVersion}')
       ..writeln('')
@@ -207,6 +214,23 @@ class DebugPackageService {
     final body = await response.stream.bytesToString();
     if (response.statusCode < 200 || response.statusCode >= 300) {
       throw HttpException('Discord upload failed: ${response.statusCode} $body');
+    }
+  }
+}
+
+class AppUpdateService {
+  AppUpdateService(this.log);
+
+  final MobileLogService log;
+
+  Future<void> openAndroidDownload() async {
+    final uri = Uri.parse(AppInfo.androidApkUrl);
+    log.info('Opening Android APK download page.');
+    final opened = await launchUrl(uri, mode: LaunchMode.externalApplication);
+    if (!opened) {
+      await Clipboard.setData(const ClipboardData(text: AppInfo.androidApkUrl));
+      log.warn('Could not open browser. APK link copied to clipboard.');
+      throw StateError('Could not open browser. Link copied to clipboard.');
     }
   }
 }
@@ -257,7 +281,14 @@ class AndroidOverlayController {
   AndroidOverlayController(this.log);
 
   static const _channel = MethodChannel('city_stamina_mobile/overlay');
+  static const _events = EventChannel('city_stamina_mobile/overlay_events');
   final MobileLogService log;
+
+  Stream<Map<String, dynamic>> get events {
+    return _events.receiveBroadcastStream().map((event) {
+      return Map<String, dynamic>.from(event as Map);
+    });
+  }
 
   Future<bool> canDrawOverlays() async {
     if (!Platform.isAndroid) return false;
@@ -319,7 +350,7 @@ class _AutomationHubPageState extends State<AutomationHubPage> {
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.stretch,
                 children: [
-                  const _AppHeader(title: 'Automation Hub', subtitle: 'Mobile 1.0.0'),
+                  const _AppHeader(title: 'Automation Hub', subtitle: 'Mobile ${AppInfo.version}'),
                   const SizedBox(height: 18),
                   _AutomationCard(
                     title: 'NTE',
@@ -340,6 +371,16 @@ class _AutomationHubPageState extends State<AutomationHubPage> {
                     icon: Icons.bug_report_rounded,
                     onTap: () async {
                       await _sendDebugPackage(context);
+                    },
+                  ),
+                  const SizedBox(height: 12),
+                  _AutomationCard(
+                    title: 'Update',
+                    subtitle: 'Download latest Android APK',
+                    status: 'GitHub',
+                    icon: Icons.system_update_alt_rounded,
+                    onTap: () async {
+                      await _openAndroidDownload(context);
                     },
                   ),
                   const Spacer(),
@@ -372,6 +413,15 @@ class _AutomationHubPageState extends State<AutomationHubPage> {
       messenger.showSnackBar(SnackBar(content: Text(message)));
     } catch (error) {
       messenger.showSnackBar(SnackBar(content: Text('Debug failed: $error')));
+    }
+  }
+
+  Future<void> _openAndroidDownload(BuildContext context) async {
+    final messenger = ScaffoldMessenger.of(context);
+    try {
+      await AppUpdateService(_log).openAndroidDownload();
+    } catch (error) {
+      messenger.showSnackBar(SnackBar(content: Text('Update failed: $error')));
     }
   }
 
@@ -423,6 +473,7 @@ class _OwnerSelectionPageState extends State<OwnerSelectionPage> {
   late final OwnerAutomationController _controller;
   late final AndroidOverlayController _overlayController;
   final _amountController = TextEditingController();
+  StreamSubscription<Map<String, dynamic>>? _overlaySubscription;
   String _stage = '1-9';
   bool _overlayVisible = false;
   bool _overlayPermissionGranted = false;
@@ -433,11 +484,15 @@ class _OwnerSelectionPageState extends State<OwnerSelectionPage> {
     _controller = OwnerAutomationController(_log);
     _overlayController = AndroidOverlayController(_log);
     unawaited(_refreshOverlayPermission());
+    _overlaySubscription = _overlayController.events.listen(_handleOverlayEvent, onError: (error) {
+      _log.warn('Floating button event stream stopped: $error');
+    });
   }
 
   @override
   void dispose() {
     _controller.dispose();
+    _overlaySubscription?.cancel();
     _amountController.dispose();
     super.dispose();
   }
@@ -569,6 +624,19 @@ class _OwnerSelectionPageState extends State<OwnerSelectionPage> {
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(content: Text('Floating button failed: $error')),
       );
+    }
+  }
+
+  void _handleOverlayEvent(Map<String, dynamic> event) {
+    if (event['type'] != 'toggle') return;
+    final shouldRun = event['running'] == true;
+    _log.info('Floating button tapped: ${shouldRun ? 'Run' : 'Stop'}.');
+    if (shouldRun) {
+      _controller.start(amount: _amountController.text, stage: _stage);
+      unawaited(_overlayController.setRunning(_controller.isRunning.value));
+    } else {
+      _controller.stop();
+      unawaited(_overlayController.setRunning(false));
     }
   }
 }
