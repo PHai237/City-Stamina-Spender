@@ -10,7 +10,7 @@
   </PropertyGroup>
 
   <ItemGroup>
-    <Content Include="..\web_ui\**\*">
+    <Content Include="..\shared\web_ui\**\*">
       <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
       <Link>web_ui\%(RecursiveDir)%(Filename)%(Extension)</Link>
     </Content>

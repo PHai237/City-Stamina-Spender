@@ -32,17 +32,17 @@ release_update_*/
 
 # Local calibration screenshots
 stage_1_1_calibration/
-source/owners_selection/_tool/*_calibration/
-source/owners_selection/_tool/*_calibration*/
-source/owners_selection/_tool/*_test/
-source/owners_selection/_tool/*_test*/
-source/owners_selection/_tool/*_capture/
-source/owners_selection/_tool/*_capture*/
-source/owners_selection/_tool/*_after_confirm/
-source/owners_selection/_tool/*_debug/
-source/owners_selection/_tool/stage_1_1_debug/
-source/owners_selection/_tool/stage_1_1_tuning.json
-source/owners_selection/_tool/support_test_status.txt
+source/modules/owners_selection/_tool/*_calibration/
+source/modules/owners_selection/_tool/*_calibration*/
+source/modules/owners_selection/_tool/*_test/
+source/modules/owners_selection/_tool/*_test*/
+source/modules/owners_selection/_tool/*_capture/
+source/modules/owners_selection/_tool/*_capture*/
+source/modules/owners_selection/_tool/*_after_confirm/
+source/modules/owners_selection/_tool/*_debug/
+source/modules/owners_selection/_tool/stage_1_1_debug/
+source/modules/owners_selection/_tool/stage_1_1_tuning.json
+source/modules/owners_selection/_tool/support_test_status.txt
 
 # Packaged binaries go to GitHub Releases, not git commits
 *.exe

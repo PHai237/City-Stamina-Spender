@@ -9,7 +9,7 @@
 ## How to use
 
 1. Click the **Download** button above.
-2. Open `City Stamina Spender.exe`.
+2. Open `City.Stamina.Spender.exe`.
 3. Later, use the **Update** button inside the app to get new versions.
 
 ## Discord debug upload

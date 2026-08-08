@@ -35,10 +35,10 @@ python -m PyInstaller ^
   --clean ^
   --onefile ^
   --name OwnerSelectionTool ^
-  --distpath "owners_selection\_tool" ^
+  --distpath "modules\owners_selection\_tool" ^
   --workpath "build\pyinstaller_work" ^
   --specpath "build" ^
-  "owners_selection\_tool\stage_1_9.py"
+  "modules\owners_selection\_tool\stage_1_9.py"
 
 if errorlevel 1 (
   echo OwnerSelectionTool build failed.
@@ -55,7 +55,7 @@ if errorlevel 1 (
 )
 
 echo Building City Stamina Spender...
-dotnet publish "avalonia_app\CityStamina.Avalonia.csproj" ^
+dotnet publish "desktop_app\CityStamina.Avalonia.csproj" ^
   -c Release ^
   -r win-x64 ^
   --self-contained true ^

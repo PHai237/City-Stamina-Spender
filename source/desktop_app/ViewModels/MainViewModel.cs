@@ -62,7 +62,7 @@ public partial class MainViewModel : ViewModelBase
     public MainViewModel()
     {
         (_rootDir, _dataDir) = FindApplicationDirectories();
-        _ownerToolDir = Path.Combine(_dataDir, "owners_selection", "_tool");
+        _ownerToolDir = Path.Combine(EmbeddedAppData.GetOwnersSelectionDir(_dataDir), "_tool");
         _ownerToolPath = Path.Combine(_ownerToolDir, "stage_1_9.py");
         _ownerToolExePath = Path.Combine(_ownerToolDir, "OwnerSelectionTool.exe");
         _wrapperLogPath = Path.Combine(_ownerToolDir, "wrapper_debug", "run.log");
@@ -330,16 +330,22 @@ public partial class MainViewModel : ViewModelBase
     [RelayCommand]
     private async Task ExportDebugAsync()
     {
+        var packagePath = "";
         try
         {
-            var desktop = Environment.GetFolderPath(Environment.SpecialFolder.DesktopDirectory);
-            if (string.IsNullOrWhiteSpace(desktop) || !Directory.Exists(desktop))
+            var hasWebhook = TryReadDiscordWebhook(out var webhookUrl);
+            var packageDir = Path.GetTempPath();
+            if (!hasWebhook)
             {
-                desktop = _rootDir;
+                packageDir = Environment.GetFolderPath(Environment.SpecialFolder.DesktopDirectory);
+                if (string.IsNullOrWhiteSpace(packageDir) || !Directory.Exists(packageDir))
+                {
+                    packageDir = _rootDir;
+                }
             }
 
             var timestamp = DateTime.Now.ToString("yyyyMMdd_HHmmss", CultureInfo.InvariantCulture);
-            var packagePath = Path.Combine(desktop, $"city-stamina-debug-{timestamp}.zip");
+            packagePath = Path.Combine(packageDir, $"city-stamina-debug-{timestamp}.zip");
             var report = new StringBuilder();
             AppendSection(
                 report,
@@ -386,24 +392,40 @@ public partial class MainViewModel : ViewModelBase
             }
 
             var packageSize = new FileInfo(packagePath).Length;
-            AppendLog($"Debug package saved to Desktop ({packageSize / 1024.0 / 1024.0:0.0} MB).");
             WriteWrapperDebug("debug", $"Exported debug package: {packagePath} bytes={packageSize}");
-            if (TryReadDiscordWebhook(out var webhookUrl))
+            if (hasWebhook)
             {
-                AppendLog("Sending debug package to Discord...");
+                AppendLog($"Sending debug package to Discord ({packageSize / 1024.0 / 1024.0:0.0} MB)...");
                 await SendDebugPackageToDiscordAsync(webhookUrl, packagePath);
                 AppendLog("Debug package sent to Discord.");
+                DeleteDebugPackage(packagePath);
             }
             else
             {
                 EnsureWebhookTemplate();
-                AppendLog("No Discord webhook configured; package saved locally.");
+                AppendLog($"No Discord webhook configured; package saved locally ({packageSize / 1024.0 / 1024.0:0.0} MB).");
             }
         }
         catch (Exception ex)
         {
             AppendLog("Debug package failed: " + ex.Message);
             WriteWrapperDebug("debug", ex.ToString());
+        }
+    }
+
+    private void DeleteDebugPackage(string packagePath)
+    {
+        try
+        {
+            if (File.Exists(packagePath))
+            {
+                File.Delete(packagePath);
+                WriteWrapperDebug("debug", "Deleted uploaded debug package: " + packagePath);
+            }
+        }
+        catch (Exception ex)
+        {
+            WriteWrapperDebug("debug", "Could not delete uploaded debug package: " + ex.Message);
         }
     }
 
@@ -1643,12 +1665,12 @@ try {
     {
         var normalized = Path.TrimEndingDirectorySeparator(dataDir);
         return Path.GetFileName(normalized).Equals("source", StringComparison.OrdinalIgnoreCase)
-            || Directory.Exists(Path.Combine(normalized, "avalonia_app"));
+            || Directory.Exists(Path.Combine(normalized, "desktop_app"));
     }
 
     private static bool HasOwnerTool(string dataDir)
     {
-        var toolDir = Path.Combine(dataDir, "owners_selection", "_tool");
+        var toolDir = Path.Combine(EmbeddedAppData.GetOwnersSelectionDir(dataDir), "_tool");
         return File.Exists(Path.Combine(toolDir, "stage_1_9.py"))
             || File.Exists(Path.Combine(toolDir, "OwnerSelectionTool.exe"));
     }

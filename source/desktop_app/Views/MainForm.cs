@@ -272,6 +272,12 @@ public sealed class MainForm : Form
                 return sourceIndexPath;
             }
 
+            var sourceSharedIndexPath = Path.Combine(directory.FullName, "source", "shared", "web_ui", "index.html");
+            if (File.Exists(sourceSharedIndexPath))
+            {
+                return sourceSharedIndexPath;
+            }
+
             directory = directory.Parent;
         }
 

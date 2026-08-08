@@ -6,7 +6,7 @@ from pathlib import Path
 
 
 ROOT = Path(__file__).resolve().parents[1]
-BUNDLE_PATH = ROOT / "avalonia_app" / "Embedded" / "app_data.zip"
+BUNDLE_PATH = ROOT / "desktop_app" / "Embedded" / "app_data.zip"
 
 EXCLUDE_DIR_NAMES = {
     "__pycache__",
@@ -43,7 +43,7 @@ def add_tree(archive: zipfile.ZipFile, source_dir: Path, archive_root: str) -> N
 
 
 def main() -> int:
-    owner_tool = ROOT / "owners_selection" / "_tool" / "OwnerSelectionTool.exe"
+    owner_tool = ROOT / "modules" / "owners_selection" / "_tool" / "OwnerSelectionTool.exe"
     if not owner_tool.exists():
         raise SystemExit("OwnerSelectionTool.exe was not found. Build it before creating app_data.zip.")
 
@@ -52,8 +52,8 @@ def main() -> int:
         BUNDLE_PATH.unlink()
 
     with zipfile.ZipFile(BUNDLE_PATH, "w", compression=zipfile.ZIP_DEFLATED, compresslevel=6) as archive:
-        add_tree(archive, ROOT / "web_ui", "web_ui")
-        add_tree(archive, ROOT / "owners_selection", "owners_selection")
+        add_tree(archive, ROOT / "shared" / "web_ui", "web_ui")
+        add_tree(archive, ROOT / "modules" / "owners_selection", "owners_selection")
 
     print(BUNDLE_PATH)
     print(f"{BUNDLE_PATH.stat().st_size / (1024 * 1024):.1f} MB")

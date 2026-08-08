@@ -85,11 +85,27 @@ internal static class EmbeddedAppData
 
     public static bool HasUsableAppData(string dataDir)
     {
-        return File.Exists(Path.Combine(dataDir, "web_ui", "index.html"))
+        return File.Exists(GetWebUiIndexPath(dataDir))
             && (
-                File.Exists(Path.Combine(dataDir, "owners_selection", "_tool", "OwnerSelectionTool.exe"))
-                || File.Exists(Path.Combine(dataDir, "owners_selection", "_tool", "stage_1_9.py"))
+                File.Exists(Path.Combine(GetOwnersSelectionDir(dataDir), "_tool", "OwnerSelectionTool.exe"))
+                || File.Exists(Path.Combine(GetOwnersSelectionDir(dataDir), "_tool", "stage_1_9.py"))
             );
+    }
+
+    public static string GetWebUiIndexPath(string dataDir)
+    {
+        var packagedPath = Path.Combine(dataDir, "web_ui", "index.html");
+        return File.Exists(packagedPath)
+            ? packagedPath
+            : Path.Combine(dataDir, "shared", "web_ui", "index.html");
+    }
+
+    public static string GetOwnersSelectionDir(string dataDir)
+    {
+        var packagedPath = Path.Combine(dataDir, "owners_selection");
+        return Directory.Exists(packagedPath)
+            ? packagedPath
+            : Path.Combine(dataDir, "modules", "owners_selection");
     }
 
     private static void ExtractZip(Stream stream, string destinationDir)
