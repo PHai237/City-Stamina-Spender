@@ -52,7 +52,7 @@ class AppColors {
 }
 
 class AppInfo {
-  static const version = '1.0.1';
+  static const version = '1.0.2';
   static const androidApkUrl =
       'https://github.com/PHai237/City-Stamina-Spender/releases/latest/download/City.Stamina.Mobile.apk';
 }
@@ -110,9 +110,9 @@ class DebugPackageService {
   }
 
   Future<void> saveWebhookUrl(String webhookUrl) async {
-    final value = webhookUrl.trim();
+    final value = _normalizeWebhookUrl(webhookUrl);
     if (!_isDiscordWebhook(value)) {
-      throw StateError('Invalid Discord webhook URL.');
+      throw const FormatException('Paste a full Discord webhook URL.');
     }
 
     final dir = await getApplicationDocumentsDirectory();
@@ -149,7 +149,8 @@ class DebugPackageService {
 
   Future<String?> _readWebhookUrl() async {
     const envWebhook = String.fromEnvironment('DISCORD_WEBHOOK_URL');
-    if (_isDiscordWebhook(envWebhook)) return envWebhook;
+    final normalizedEnvWebhook = _normalizeWebhookUrl(envWebhook);
+    if (_isDiscordWebhook(normalizedEnvWebhook)) return normalizedEnvWebhook;
 
     final dir = await getApplicationDocumentsDirectory();
     final file = File(p.join(dir.path, 'discord_webhook.txt'));
@@ -164,15 +165,37 @@ class DebugPackageService {
 
     final lines = await file.readAsLines();
     for (final line in lines) {
-      final value = line.trim();
+      final value = _normalizeWebhookUrl(line);
       if (_isDiscordWebhook(value)) return value;
     }
     return null;
   }
 
+  String _normalizeWebhookUrl(String value) {
+    var normalized = value.trim();
+    while (normalized.isNotEmpty && '<"\''.contains(normalized[0])) {
+      normalized = normalized.substring(1).trimLeft();
+    }
+    while (normalized.isNotEmpty && '>"\''.contains(normalized[normalized.length - 1])) {
+      normalized = normalized.substring(0, normalized.length - 1).trimRight();
+    }
+    return normalized;
+  }
+
   bool _isDiscordWebhook(String value) {
-    return value.startsWith('https://discord.com/api/webhooks/') ||
-        value.startsWith('https://discordapp.com/api/webhooks/');
+    final uri = Uri.tryParse(value);
+    if (uri == null || uri.scheme != 'https') return false;
+    const allowedHosts = {
+      'discord.com',
+      'discordapp.com',
+      'canary.discord.com',
+      'ptb.discord.com',
+    };
+    return allowedHosts.contains(uri.host.toLowerCase()) &&
+        uri.pathSegments.length >= 3 &&
+        uri.pathSegments[0] == 'api' &&
+        uri.pathSegments[1] == 'webhooks' &&
+        uri.pathSegments[2].isNotEmpty;
   }
 
   Future<String> _buildReport() async {
@@ -428,8 +451,21 @@ Future<void> sendMobileDebugPackage(BuildContext context, MobileLogService log) 
     messenger.showSnackBar(SnackBar(content: Text(message)));
   } catch (error) {
     log.error('Debug failed: $error');
-    messenger.showSnackBar(SnackBar(content: Text('Debug failed: $error')));
+    messenger.showSnackBar(SnackBar(content: Text('Debug failed: ${formatUserError(error)}')));
   }
+}
+
+String formatUserError(Object error) {
+  if (error is FormatException) {
+    return error.message;
+  }
+  if (error is StateError) {
+    return error.message;
+  }
+  return error.toString()
+      .replaceFirst('Exception: ', '')
+      .replaceFirst('Bad state: ', '')
+      .replaceFirst('FormatException: ', '');
 }
 
 Future<String?> askWebhookUrl(BuildContext context) async {
@@ -447,6 +483,7 @@ Future<String?> askWebhookUrl(BuildContext context) async {
             maxLines: 3,
             decoration: const InputDecoration(
               hintText: 'https://discord.com/api/webhooks/...',
+              helperText: 'Use the webhook URL, not the Discord channel link.',
             ),
           ),
           actions: [
