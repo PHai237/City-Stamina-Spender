@@ -4,6 +4,7 @@ import android.content.BroadcastReceiver
 import android.content.Context
 import android.content.Intent
 import android.content.IntentFilter
+import android.content.ActivityNotFoundException
 import android.net.Uri
 import android.os.Build
 import android.provider.Settings
@@ -29,7 +30,16 @@ class MainActivity : FlutterActivity() {
                         Settings.ACTION_MANAGE_OVERLAY_PERMISSION,
                         Uri.parse("package:$packageName")
                     )
-                    startActivity(intent)
+                    try {
+                        startActivity(intent)
+                    } catch (_: ActivityNotFoundException) {
+                        startActivity(
+                            Intent(
+                                Settings.ACTION_APPLICATION_DETAILS_SETTINGS,
+                                Uri.parse("package:$packageName")
+                            )
+                        )
+                    }
                     result.success(null)
                 }
                 "startOverlay" -> {

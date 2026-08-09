@@ -52,7 +52,7 @@ class AppColors {
 }
 
 class AppInfo {
-  static const version = '1.0.0';
+  static const version = '1.0.1';
   static const androidApkUrl =
       'https://github.com/PHai237/City-Stamina-Spender/releases/latest/download/City.Stamina.Mobile.apk';
 }
@@ -395,25 +395,7 @@ class _AutomationHubPageState extends State<AutomationHubPage> {
   }
 
   Future<void> _sendDebugPackage(BuildContext context) async {
-    final messenger = ScaffoldMessenger.of(context);
-    final debugService = DebugPackageService(_log);
-    try {
-      if (!await debugService.hasWebhookConfigured()) {
-        if (!context.mounted) return;
-        final webhookUrl = await _askWebhookUrl(context);
-        if (!context.mounted) return;
-        if (webhookUrl == null) {
-          _log.warn('Debug upload canceled because webhook is not configured.');
-          return;
-        }
-        await debugService.saveWebhookUrl(webhookUrl);
-      }
-      _log.info('Sending mobile debug package...');
-      final message = await debugService.exportToDiscord();
-      messenger.showSnackBar(SnackBar(content: Text(message)));
-    } catch (error) {
-      messenger.showSnackBar(SnackBar(content: Text('Debug failed: $error')));
-    }
+    await sendMobileDebugPackage(context, _log);
   }
 
   Future<void> _openAndroidDownload(BuildContext context) async {
@@ -425,39 +407,63 @@ class _AutomationHubPageState extends State<AutomationHubPage> {
     }
   }
 
-  Future<String?> _askWebhookUrl(BuildContext context) async {
-    final controller = TextEditingController();
-    try {
-      return await showDialog<String>(
-        context: context,
-        builder: (context) {
-          return AlertDialog(
-            title: const Text('Discord webhook'),
-            content: TextField(
-              controller: controller,
-              autofocus: true,
-              minLines: 1,
-              maxLines: 3,
-              decoration: const InputDecoration(
-                hintText: 'https://discord.com/api/webhooks/...',
-              ),
-            ),
-            actions: [
-              TextButton(
-                onPressed: () => Navigator.of(context).pop(),
-                child: const Text('Cancel'),
-              ),
-              FilledButton(
-                onPressed: () => Navigator.of(context).pop(controller.text),
-                child: const Text('Save'),
-              ),
-            ],
-          );
-        },
-      );
-    } finally {
-      controller.dispose();
+}
+
+Future<void> sendMobileDebugPackage(BuildContext context, MobileLogService log) async {
+  final messenger = ScaffoldMessenger.of(context);
+  final debugService = DebugPackageService(log);
+  try {
+    if (!await debugService.hasWebhookConfigured()) {
+      if (!context.mounted) return;
+      final webhookUrl = await askWebhookUrl(context);
+      if (!context.mounted) return;
+      if (webhookUrl == null) {
+        log.warn('Debug upload canceled because webhook is not configured.');
+        return;
+      }
+      await debugService.saveWebhookUrl(webhookUrl);
     }
+    log.info('Sending mobile debug package...');
+    final message = await debugService.exportToDiscord();
+    messenger.showSnackBar(SnackBar(content: Text(message)));
+  } catch (error) {
+    log.error('Debug failed: $error');
+    messenger.showSnackBar(SnackBar(content: Text('Debug failed: $error')));
+  }
+}
+
+Future<String?> askWebhookUrl(BuildContext context) async {
+  final controller = TextEditingController();
+  try {
+    return await showDialog<String>(
+      context: context,
+      builder: (context) {
+        return AlertDialog(
+          title: const Text('Discord webhook'),
+          content: TextField(
+            controller: controller,
+            autofocus: true,
+            minLines: 1,
+            maxLines: 3,
+            decoration: const InputDecoration(
+              hintText: 'https://discord.com/api/webhooks/...',
+            ),
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.of(context).pop(),
+              child: const Text('Cancel'),
+            ),
+            FilledButton(
+              onPressed: () => Navigator.of(context).pop(controller.text),
+              child: const Text('Save'),
+            ),
+          ],
+        );
+      },
+    );
+  } finally {
+    controller.dispose();
   }
 }
 
@@ -477,6 +483,7 @@ class _OwnerSelectionPageState extends State<OwnerSelectionPage> {
   String _stage = '1-9';
   bool _overlayVisible = false;
   bool _overlayPermissionGranted = false;
+  bool _overlayPermissionPromptShown = false;
 
   @override
   void initState() {
@@ -484,6 +491,9 @@ class _OwnerSelectionPageState extends State<OwnerSelectionPage> {
     _controller = OwnerAutomationController(_log);
     _overlayController = AndroidOverlayController(_log);
     unawaited(_refreshOverlayPermission());
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      unawaited(_promptOverlayPermissionIfNeeded());
+    });
     _overlaySubscription = _overlayController.events.listen(_handleOverlayEvent, onError: (error) {
       _log.warn('Floating button event stream stopped: $error');
     });
@@ -566,6 +576,12 @@ class _OwnerSelectionPageState extends State<OwnerSelectionPage> {
                       icon: Icon(_overlayVisible ? Icons.visibility_off_rounded : Icons.open_in_new_rounded),
                       label: Text(_overlayVisible ? 'Hide floating button' : 'Show floating button'),
                     ),
+                    const SizedBox(height: 10),
+                    OutlinedButton.icon(
+                      onPressed: () => sendMobileDebugPackage(context, _log),
+                      icon: const Icon(Icons.bug_report_rounded),
+                      label: const Text('Send debug log'),
+                    ),
                     const SizedBox(height: 8),
                     Text(
                       _overlayPermissionGranted
@@ -589,6 +605,43 @@ class _OwnerSelectionPageState extends State<OwnerSelectionPage> {
     final granted = await _overlayController.canDrawOverlays();
     if (!mounted) return;
     setState(() => _overlayPermissionGranted = granted);
+    _log.info('Floating permission check: ${granted ? 'granted' : 'missing'}.');
+  }
+
+  Future<void> _promptOverlayPermissionIfNeeded() async {
+    if (_overlayPermissionPromptShown) return;
+    _overlayPermissionPromptShown = true;
+    final granted = await _overlayController.canDrawOverlays();
+    if (!mounted) return;
+    setState(() => _overlayPermissionGranted = granted);
+    if (granted) return;
+
+    final openSettings = await showDialog<bool>(
+      context: context,
+      builder: (context) {
+        return AlertDialog(
+          title: const Text('Floating button permission'),
+          content: const Text(
+            'Android needs "Display over other apps" before the floating Run/Stop button can work.',
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.of(context).pop(false),
+              child: const Text('Later'),
+            ),
+            FilledButton(
+              onPressed: () => Navigator.of(context).pop(true),
+              child: const Text('Open settings'),
+            ),
+          ],
+        );
+      },
+    );
+
+    if (openSettings == true) {
+      _log.info('User opened floating permission settings from Owner page prompt.');
+      await _overlayController.openOverlaySettings();
+    }
   }
 
   Future<void> _toggleOverlay() async {
@@ -602,6 +655,7 @@ class _OwnerSelectionPageState extends State<OwnerSelectionPage> {
 
       final granted = await _overlayController.canDrawOverlays();
       if (!granted) {
+        _log.warn('Floating button cannot start because overlay permission is missing.');
         await _overlayController.openOverlaySettings();
         if (!mounted) return;
         setState(() => _overlayPermissionGranted = false);
