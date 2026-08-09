@@ -1,14 +1,21 @@
 <manifest xmlns:android="http://schemas.android.com/apk/res/android">
     <uses-permission android:name="android.permission.INTERNET"/>
-    <uses-permission android:name="android.permission.SYSTEM_ALERT_WINDOW"/>
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE"/>
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE_SPECIAL_USE"/>
+    <uses-permission android:name="android.permission.POST_NOTIFICATIONS"/>
 
     <application
         android:label="City Stamina"
         android:name="${applicationName}"
         android:icon="@mipmap/ic_launcher">
         <service
-            android:name=".OverlayService"
-            android:exported="false" />
+            android:name=".ControlService"
+            android:exported="false"
+            android:foregroundServiceType="specialUse">
+            <property
+                android:name="android.app.PROPERTY_SPECIAL_USE_FGS_SUBTYPE"
+                android:value="Run and stop automation from notification." />
+        </service>
 
         <activity
             android:name=".MainActivity"

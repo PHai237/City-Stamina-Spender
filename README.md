@@ -21,11 +21,12 @@
 2. Open the downloaded `City.Stamina.Mobile.apk` on your phone.
 3. If Android asks, allow installing apps from your browser or file manager.
 4. Open **City Stamina**.
-5. For the floating button, allow **Draw over other apps** when the app asks.
+5. Open **Owner's Selection** and enable **notification control**.
+6. Pull down the Android notification shade to use the **Run** or **Stop** action while NTE is open.
 
 The Android app is still a mobile foundation build. It has the hub, Owner's
-Selection screen, Run/Stop state, floating button scaffold, and Discord debug
-logs. Full screen capture/tap automation is not wired yet.
+Selection screen, Run/Stop state, notification control, and Discord debug logs.
+Full screen capture/tap automation is not wired yet.
 
 ## Discord debug upload
 

@@ -52,7 +52,7 @@ class AppColors {
 }
 
 class AppInfo {
-  static const version = '1.0.2';
+  static const version = '1.0.3';
   static const androidApkUrl =
       'https://github.com/PHai237/City-Stamina-Spender/releases/latest/download/City.Stamina.Mobile.apk';
 }
@@ -277,7 +277,7 @@ class OwnerAutomationController {
     _seconds = 0;
     isRunning.value = true;
     log.info('Run started. stage=$stage target=$parsed');
-    log.info('Overlay controller is not wired yet.');
+    log.info('Mobile automation runner is not wired yet.');
     _timer = Timer.periodic(const Duration(seconds: 1), (_) {
       _seconds += 1;
       if (_seconds % 10 == 0) {
@@ -300,11 +300,11 @@ class OwnerAutomationController {
   }
 }
 
-class AndroidOverlayController {
-  AndroidOverlayController(this.log);
+class AndroidControlController {
+  AndroidControlController(this.log);
 
-  static const _channel = MethodChannel('city_stamina_mobile/overlay');
-  static const _events = EventChannel('city_stamina_mobile/overlay_events');
+  static const _channel = MethodChannel('city_stamina_mobile/control');
+  static const _events = EventChannel('city_stamina_mobile/control_events');
   final MobileLogService log;
 
   Stream<Map<String, dynamic>> get events {
@@ -313,35 +313,35 @@ class AndroidOverlayController {
     });
   }
 
-  Future<bool> canDrawOverlays() async {
+  Future<bool> canPostNotifications() async {
     if (!Platform.isAndroid) return false;
-    return await _channel.invokeMethod<bool>('canDrawOverlays') ?? false;
+    return await _channel.invokeMethod<bool>('canPostNotifications') ?? false;
   }
 
-  Future<void> openOverlaySettings() async {
+  Future<void> requestNotificationPermission() async {
     if (!Platform.isAndroid) return;
-    await _channel.invokeMethod<void>('openOverlaySettings');
-    log.info('Opened Android overlay permission settings.');
+    await _channel.invokeMethod<void>('requestNotificationPermission');
+    log.info('Requested Android notification permission.');
   }
 
-  Future<void> startOverlay() async {
+  Future<void> startControlNotification() async {
     if (!Platform.isAndroid) {
-      log.warn('Floating button is Android-only.');
+      log.warn('Notification control is Android-only.');
       return;
     }
-    await _channel.invokeMethod<void>('startOverlay');
-    log.info('Floating button started.');
+    await _channel.invokeMethod<void>('startControl');
+    log.info('Notification control started.');
   }
 
-  Future<void> stopOverlay() async {
+  Future<void> stopControlNotification() async {
     if (!Platform.isAndroid) return;
-    await _channel.invokeMethod<void>('stopOverlay');
-    log.info('Floating button stopped.');
+    await _channel.invokeMethod<void>('stopControl');
+    log.info('Notification control stopped.');
   }
 
-  Future<void> setRunning(bool running) async {
+  Future<void> setControlRunning(bool running) async {
     if (!Platform.isAndroid) return;
-    await _channel.invokeMethod<void>('setRunning', {'running': running});
+    await _channel.invokeMethod<void>('setControlRunning', {'running': running});
   }
 }
 
@@ -514,32 +514,31 @@ class OwnerSelectionPage extends StatefulWidget {
 class _OwnerSelectionPageState extends State<OwnerSelectionPage> {
   final _log = MobileLogService.instance;
   late final OwnerAutomationController _controller;
-  late final AndroidOverlayController _overlayController;
+  late final AndroidControlController _controlController;
   final _amountController = TextEditingController();
-  StreamSubscription<Map<String, dynamic>>? _overlaySubscription;
+  StreamSubscription<Map<String, dynamic>>? _controlSubscription;
   String _stage = '1-9';
-  bool _overlayVisible = false;
-  bool _overlayPermissionGranted = false;
-  bool _overlayPermissionPromptShown = false;
+  bool _notificationControlVisible = false;
+  bool _notificationPermissionGranted = false;
 
   @override
   void initState() {
     super.initState();
     _controller = OwnerAutomationController(_log);
-    _overlayController = AndroidOverlayController(_log);
-    unawaited(_refreshOverlayPermission());
+    _controlController = AndroidControlController(_log);
+    unawaited(_refreshNotificationPermission());
     WidgetsBinding.instance.addPostFrameCallback((_) {
-      unawaited(_promptOverlayPermissionIfNeeded());
+      unawaited(_promptNotificationPermissionIfNeeded());
     });
-    _overlaySubscription = _overlayController.events.listen(_handleOverlayEvent, onError: (error) {
-      _log.warn('Floating button event stream stopped: $error');
+    _controlSubscription = _controlController.events.listen(_handleControlEvent, onError: (error) {
+      _log.warn('Notification control event stream stopped: $error');
     });
   }
 
   @override
   void dispose() {
     _controller.dispose();
-    _overlaySubscription?.cancel();
+    _controlSubscription?.cancel();
     _amountController.dispose();
     super.dispose();
   }
@@ -588,13 +587,13 @@ class _OwnerSelectionPageState extends State<OwnerSelectionPage> {
                           onPressed: () {
                             if (running) {
                               _controller.stop();
-                              unawaited(_overlayController.setRunning(false));
+                              unawaited(_controlController.setControlRunning(false));
                             } else {
                               _controller.start(
                                 amount: _amountController.text,
                                 stage: _stage,
                               );
-                              unawaited(_overlayController.setRunning(true));
+                              unawaited(_controlController.setControlRunning(true));
                             }
                           },
                           style: FilledButton.styleFrom(
@@ -609,9 +608,17 @@ class _OwnerSelectionPageState extends State<OwnerSelectionPage> {
                     ),
                     const SizedBox(height: 10),
                     OutlinedButton.icon(
-                      onPressed: _toggleOverlay,
-                      icon: Icon(_overlayVisible ? Icons.visibility_off_rounded : Icons.open_in_new_rounded),
-                      label: Text(_overlayVisible ? 'Hide floating button' : 'Show floating button'),
+                      onPressed: _toggleNotificationControl,
+                      icon: Icon(
+                        _notificationControlVisible
+                            ? Icons.notifications_off_rounded
+                            : Icons.notifications_active_rounded,
+                      ),
+                      label: Text(
+                        _notificationControlVisible
+                            ? 'Hide notification control'
+                            : 'Show notification control',
+                      ),
                     ),
                     const SizedBox(height: 10),
                     OutlinedButton.icon(
@@ -621,9 +628,9 @@ class _OwnerSelectionPageState extends State<OwnerSelectionPage> {
                     ),
                     const SizedBox(height: 8),
                     Text(
-                      _overlayPermissionGranted
-                          ? 'Floating permission is ready.'
-                          : 'Floating permission is needed on Android.',
+                      _notificationPermissionGranted
+                          ? 'Notification control is ready.'
+                          : 'Notification permission is needed on Android 13+.',
                       style: const TextStyle(color: AppColors.muted, fontSize: 12),
                     ),
                   ],
@@ -638,28 +645,26 @@ class _OwnerSelectionPageState extends State<OwnerSelectionPage> {
     );
   }
 
-  Future<void> _refreshOverlayPermission() async {
-    final granted = await _overlayController.canDrawOverlays();
+  Future<void> _refreshNotificationPermission() async {
+    final granted = await _controlController.canPostNotifications();
     if (!mounted) return;
-    setState(() => _overlayPermissionGranted = granted);
-    _log.info('Floating permission check: ${granted ? 'granted' : 'missing'}.');
+    setState(() => _notificationPermissionGranted = granted);
+    _log.info('Notification permission check: ${granted ? 'granted' : 'missing'}.');
   }
 
-  Future<void> _promptOverlayPermissionIfNeeded() async {
-    if (_overlayPermissionPromptShown) return;
-    _overlayPermissionPromptShown = true;
-    final granted = await _overlayController.canDrawOverlays();
+  Future<void> _promptNotificationPermissionIfNeeded() async {
+    final granted = await _controlController.canPostNotifications();
     if (!mounted) return;
-    setState(() => _overlayPermissionGranted = granted);
+    setState(() => _notificationPermissionGranted = granted);
     if (granted) return;
 
-    final openSettings = await showDialog<bool>(
+    final openPrompt = await showDialog<bool>(
       context: context,
       builder: (context) {
         return AlertDialog(
-          title: const Text('Floating button permission'),
+          title: const Text('Notification control'),
           content: const Text(
-            'Android needs "Display over other apps" before the floating Run/Stop button can work.',
+            'Enable notifications to control Run/Stop while the game is open.',
           ),
           actions: [
             TextButton(
@@ -668,66 +673,56 @@ class _OwnerSelectionPageState extends State<OwnerSelectionPage> {
             ),
             FilledButton(
               onPressed: () => Navigator.of(context).pop(true),
-              child: const Text('Open settings'),
+              child: const Text('Allow'),
             ),
           ],
         );
       },
     );
 
-    if (openSettings == true) {
-      _log.info('User opened floating permission settings from Owner page prompt.');
-      await _overlayController.openOverlaySettings();
+    if (openPrompt == true) {
+      await _controlController.requestNotificationPermission();
+      await _refreshNotificationPermission();
     }
   }
 
-  Future<void> _toggleOverlay() async {
+  Future<void> _toggleNotificationControl() async {
     try {
-      if (_overlayVisible) {
-        await _overlayController.stopOverlay();
+      if (_notificationControlVisible) {
+        await _controlController.stopControlNotification();
         if (!mounted) return;
-        setState(() => _overlayVisible = false);
+        setState(() => _notificationControlVisible = false);
         return;
       }
 
-      final granted = await _overlayController.canDrawOverlays();
-      if (!granted) {
-        _log.warn('Floating button cannot start because overlay permission is missing.');
-        await _overlayController.openOverlaySettings();
-        if (!mounted) return;
-        setState(() => _overlayPermissionGranted = false);
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('Enable Draw over other apps, then return here.')),
-        );
-        return;
+      if (!await _controlController.canPostNotifications()) {
+        await _controlController.requestNotificationPermission();
+        await _refreshNotificationPermission();
       }
 
-      await _overlayController.startOverlay();
-      await _overlayController.setRunning(_controller.isRunning.value);
+      await _controlController.startControlNotification();
+      await _controlController.setControlRunning(_controller.isRunning.value);
       if (!mounted) return;
-      setState(() {
-        _overlayPermissionGranted = true;
-        _overlayVisible = true;
-      });
+      setState(() => _notificationControlVisible = true);
     } catch (error) {
-      _log.error('Floating button failed: $error');
+      _log.error('Notification control failed: $error');
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('Floating button failed: $error')),
+        SnackBar(content: Text('Notification control failed: ${formatUserError(error)}')),
       );
     }
   }
 
-  void _handleOverlayEvent(Map<String, dynamic> event) {
+  void _handleControlEvent(Map<String, dynamic> event) {
     if (event['type'] != 'toggle') return;
     final shouldRun = event['running'] == true;
-    _log.info('Floating button tapped: ${shouldRun ? 'Run' : 'Stop'}.');
+    _log.info('Notification control tapped: ${shouldRun ? 'Run' : 'Stop'}.');
     if (shouldRun) {
       _controller.start(amount: _amountController.text, stage: _stage);
-      unawaited(_overlayController.setRunning(_controller.isRunning.value));
+      unawaited(_controlController.setControlRunning(_controller.isRunning.value));
     } else {
       _controller.stop();
-      unawaited(_overlayController.setRunning(false));
+      unawaited(_controlController.setControlRunning(false));
     }
   }
 }

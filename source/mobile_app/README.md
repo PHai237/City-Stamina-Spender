@@ -9,8 +9,8 @@ Current scope:
 - City Stamina amount input
 - Stage selector
 - Run/Stop state
-- Android floating button scaffold
-- Floating button events routed back into Flutter
+- Android notification Run/Stop control
+- Notification action events routed back into Flutter
 - Update card that opens the latest GitHub APK download
 - Local logs
 - Discord debug upload with local temporary file cleanup
@@ -42,7 +42,7 @@ Manual test flow on a phone:
 2. Open **City Stamina**.
 3. Open **Owner's Selection**.
 4. Enter a City Stamina amount.
-5. Tap **Show floating button** and allow **Draw over other apps**.
-6. Return to the app and tap **Show floating button** again.
-7. Open NTE and verify the floating button stays above the game.
-8. Tap the floating button and confirm the app log records Run/Stop.
+5. Tap **Show notification control** and allow notifications if Android asks.
+6. Open NTE.
+7. Pull down the notification shade.
+8. Tap the **Run** or **Stop** action and confirm the app log records it.

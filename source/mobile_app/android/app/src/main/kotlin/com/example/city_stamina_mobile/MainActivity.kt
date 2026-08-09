@@ -1,63 +1,54 @@
 package com.example.city_stamina_mobile
 
+import android.Manifest
 import android.content.BroadcastReceiver
 import android.content.Context
 import android.content.Intent
 import android.content.IntentFilter
-import android.content.ActivityNotFoundException
-import android.net.Uri
+import android.content.pm.PackageManager
 import android.os.Build
-import android.provider.Settings
 import io.flutter.embedding.android.FlutterActivity
 import io.flutter.embedding.engine.FlutterEngine
 import io.flutter.plugin.common.EventChannel
 import io.flutter.plugin.common.MethodChannel
 
 class MainActivity : FlutterActivity() {
-    private val channelName = "city_stamina_mobile/overlay"
-    private val eventsChannelName = "city_stamina_mobile/overlay_events"
-    private var overlayEventSink: EventChannel.EventSink? = null
-    private var overlayReceiver: BroadcastReceiver? = null
+    private val channelName = "city_stamina_mobile/control"
+    private val eventsChannelName = "city_stamina_mobile/control_events"
+    private var controlEventSink: EventChannel.EventSink? = null
+    private var controlReceiver: BroadcastReceiver? = null
 
     override fun configureFlutterEngine(flutterEngine: FlutterEngine) {
         super.configureFlutterEngine(flutterEngine)
 
         MethodChannel(flutterEngine.dartExecutor.binaryMessenger, channelName).setMethodCallHandler { call, result ->
             when (call.method) {
-                "canDrawOverlays" -> result.success(Settings.canDrawOverlays(this))
-                "openOverlaySettings" -> {
-                    val intent = Intent(
-                        Settings.ACTION_MANAGE_OVERLAY_PERMISSION,
-                        Uri.parse("package:$packageName")
-                    )
-                    try {
-                        startActivity(intent)
-                    } catch (_: ActivityNotFoundException) {
-                        startActivity(
-                            Intent(
-                                Settings.ACTION_APPLICATION_DETAILS_SETTINGS,
-                                Uri.parse("package:$packageName")
-                            )
-                        )
+                "canPostNotifications" -> {
+                    val granted = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+                        checkSelfPermission(Manifest.permission.POST_NOTIFICATIONS) == PackageManager.PERMISSION_GRANTED
+                    } else {
+                        true
+                    }
+                    result.success(granted)
+                }
+                "requestNotificationPermission" -> {
+                    if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+                        requestPermissions(arrayOf(Manifest.permission.POST_NOTIFICATIONS), 1102)
                     }
                     result.success(null)
                 }
-                "startOverlay" -> {
-                    if (!Settings.canDrawOverlays(this)) {
-                        result.error("overlay_permission_missing", "Draw over other apps permission is not granted.", null)
-                        return@setMethodCallHandler
-                    }
-                    startService(Intent(this, OverlayService::class.java).setAction(OverlayService.ACTION_SHOW))
+                "startControl" -> {
+                    startService(Intent(this, ControlService::class.java).setAction(ControlService.ACTION_SHOW))
                     result.success(null)
                 }
-                "stopOverlay" -> {
-                    startService(Intent(this, OverlayService::class.java).setAction(OverlayService.ACTION_HIDE))
+                "stopControl" -> {
+                    startService(Intent(this, ControlService::class.java).setAction(ControlService.ACTION_HIDE))
                     result.success(null)
                 }
-                "setRunning" -> {
+                "setControlRunning" -> {
                     val running = call.argument<Boolean>("running") ?: false
-                    val action = if (running) OverlayService.ACTION_SET_RUNNING else OverlayService.ACTION_SET_IDLE
-                    startService(Intent(this, OverlayService::class.java).setAction(action))
+                    val action = if (running) ControlService.ACTION_SET_RUNNING else ControlService.ACTION_SET_IDLE
+                    startService(Intent(this, ControlService::class.java).setAction(action))
                     result.success(null)
                 }
                 else -> result.notImplemented()
@@ -67,29 +58,29 @@ class MainActivity : FlutterActivity() {
         EventChannel(flutterEngine.dartExecutor.binaryMessenger, eventsChannelName).setStreamHandler(
             object : EventChannel.StreamHandler {
                 override fun onListen(arguments: Any?, events: EventChannel.EventSink?) {
-                    overlayEventSink = events
-                    registerOverlayReceiver()
+                    controlEventSink = events
+                    registerControlReceiver()
                 }
 
                 override fun onCancel(arguments: Any?) {
-                    unregisterOverlayReceiver()
-                    overlayEventSink = null
+                    unregisterControlReceiver()
+                    controlEventSink = null
                 }
             }
         )
     }
 
     override fun onDestroy() {
-        unregisterOverlayReceiver()
+        unregisterControlReceiver()
         super.onDestroy()
     }
 
-    private fun registerOverlayReceiver() {
-        if (overlayReceiver != null) return
-        overlayReceiver = object : BroadcastReceiver() {
+    private fun registerControlReceiver() {
+        if (controlReceiver != null) return
+        controlReceiver = object : BroadcastReceiver() {
             override fun onReceive(context: Context?, intent: Intent?) {
-                if (intent?.action != OverlayService.ACTION_TOGGLE_REQUEST) return
-                overlayEventSink?.success(
+                if (intent?.action != ControlService.ACTION_TOGGLE_REQUEST) return
+                controlEventSink?.success(
                     mapOf(
                         "type" to "toggle",
                         "running" to intent.getBooleanExtra("running", false)
@@ -98,19 +89,19 @@ class MainActivity : FlutterActivity() {
             }
         }
 
-        val filter = IntentFilter(OverlayService.ACTION_TOGGLE_REQUEST)
+        val filter = IntentFilter(ControlService.ACTION_TOGGLE_REQUEST)
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
-            registerReceiver(overlayReceiver, filter, Context.RECEIVER_NOT_EXPORTED)
+            registerReceiver(controlReceiver, filter, Context.RECEIVER_NOT_EXPORTED)
         } else {
             @Suppress("DEPRECATION")
-            registerReceiver(overlayReceiver, filter)
+            registerReceiver(controlReceiver, filter)
         }
     }
 
-    private fun unregisterOverlayReceiver() {
-        overlayReceiver?.let {
+    private fun unregisterControlReceiver() {
+        controlReceiver?.let {
             unregisterReceiver(it)
-            overlayReceiver = null
+            controlReceiver = null
         }
     }
 }
