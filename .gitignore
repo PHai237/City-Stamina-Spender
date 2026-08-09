@@ -29,6 +29,7 @@ discord_webhook.txt
 # Release archives generated locally
 *.zip
 release_update_*/
+source/_design_city_stamina_hub/
 
 # Local calibration screenshots
 stage_1_1_calibration/

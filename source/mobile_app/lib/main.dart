@@ -2,6 +2,7 @@ import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
 
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:http/http.dart' as http;
@@ -27,10 +28,10 @@ class CityStaminaMobileApp extends StatelessWidget {
         colorScheme: const ColorScheme.dark(
           primary: AppColors.primary,
           secondary: AppColors.primary,
-          surface: AppColors.panel,
+          surface: AppColors.surface,
           error: AppColors.danger,
         ),
-        fontFamily: 'Roboto',
+        fontFamily: 'Inter',
         useMaterial3: true,
       ),
       home: const AutomationHubPage(),
@@ -39,20 +40,26 @@ class CityStaminaMobileApp extends StatelessWidget {
 }
 
 class AppColors {
-  static const background = Color(0xFF07111F);
-  static const panel = Color(0xFF101C31);
-  static const card = Color(0xFF172642);
-  static const cardAlt = Color(0xFF0D1728);
-  static const primary = Color(0xFF36D6A7);
-  static const blue = Color(0xFF4B91FF);
-  static const danger = Color(0xFFFF6969);
-  static const text = Color(0xFFF7FAFF);
-  static const muted = Color(0xFFA7B5D1);
-  static const border = Color(0xFF2B3A58);
+  static const background = Color(0xFF0E1320);
+  static const surface = Color(0xFF141B2D);
+  static const panel = Color(0xFF1A2238);
+  static const log = Color(0xFF090D16);
+  static const primary = Color(0xFF34D399);
+  static const primaryDim = Color(0xFF1A3330);
+  static const danger = Color(0xFFF06060);
+  static const dangerDim = Color(0xFF2E1515);
+  static const blue = Color(0xFF3B6BBC);
+  static const violet = Color(0xFF7C5CBF);
+  static const warning = Color(0xFFF59E0B);
+  static const text = Color(0xFFDCE6F5);
+  static const sub = Color(0xFF8494B0);
+  static const muted = Color(0xFF5A6A88);
+  static const dim = Color(0xFF2A3650);
+  static const border = Color(0x12FFFFFF);
 }
 
 class AppInfo {
-  static const version = '1.0.3';
+  static const version = '1.0.4';
   static const androidApkUrl =
       'https://github.com/PHai237/City-Stamina-Spender/releases/latest/download/City.Stamina.Mobile.apk';
 }
@@ -263,8 +270,8 @@ class OwnerAutomationController {
 
   final MobileLogService log;
   final ValueNotifier<bool> isRunning = ValueNotifier(false);
+  final ValueNotifier<int> elapsedSeconds = ValueNotifier(0);
   Timer? _timer;
-  int _seconds = 0;
 
   void start({required String amount, required String stage}) {
     if (isRunning.value) return;
@@ -274,14 +281,14 @@ class OwnerAutomationController {
       return;
     }
 
-    _seconds = 0;
+    elapsedSeconds.value = 0;
     isRunning.value = true;
     log.info('Run started. stage=$stage target=$parsed');
     log.info('Mobile automation runner is not wired yet.');
     _timer = Timer.periodic(const Duration(seconds: 1), (_) {
-      _seconds += 1;
-      if (_seconds % 10 == 0) {
-        log.info('Still running. elapsed=${_seconds}s');
+      elapsedSeconds.value += 1;
+      if (elapsedSeconds.value % 10 == 0) {
+        log.info('Still running. elapsed=${elapsedSeconds.value}s');
       }
     });
   }
@@ -297,6 +304,7 @@ class OwnerAutomationController {
   void dispose() {
     _timer?.cancel();
     isRunning.dispose();
+    elapsedSeconds.dispose();
   }
 }
 
@@ -365,53 +373,50 @@ class _AutomationHubPageState extends State<AutomationHubPage> {
   Widget build(BuildContext context) {
     return Scaffold(
       body: SafeArea(
-        child: LayoutBuilder(
-          builder: (context, constraints) {
-            final compact = constraints.maxWidth < 420;
-            return Padding(
-              padding: EdgeInsets.all(compact ? 16 : 24),
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.stretch,
+        child: SingleChildScrollView(
+          padding: const EdgeInsets.fromLTRB(20, 18, 20, 22),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              const _AppHeader(title: 'Automation Hub', subtitle: 'Mobile ${AppInfo.version}'),
+              const SizedBox(height: 18),
+              _PrimaryAutomationCard(
+                onTap: () {
+                  Navigator.of(context).push(
+                    MaterialPageRoute(builder: (_) => const OwnerSelectionPage()),
+                  );
+                },
+              ),
+              const SizedBox(height: 12),
+              Row(
                 children: [
-                  const _AppHeader(title: 'Automation Hub', subtitle: 'Mobile ${AppInfo.version}'),
-                  const SizedBox(height: 18),
-                  _AutomationCard(
-                    title: 'NTE',
-                    subtitle: "Owner's Selection",
-                    status: 'Ready',
-                    icon: Icons.bolt_rounded,
-                    onTap: () {
-                      Navigator.of(context).push(
-                        MaterialPageRoute(builder: (_) => const OwnerSelectionPage()),
-                      );
-                    },
+                  Expanded(
+                    child: _SmallActionCard(
+                      title: 'Debug',
+                      subtitle: 'Export session log',
+                      color: AppColors.blue,
+                      icon: Icons.bug_report_rounded,
+                      onTap: () async => _sendDebugPackage(context),
+                    ),
                   ),
-                  const SizedBox(height: 12),
-                  _AutomationCard(
-                    title: 'Debug',
-                    subtitle: 'Send mobile logs to Discord',
-                    status: 'Tool',
-                    icon: Icons.bug_report_rounded,
-                    onTap: () async {
-                      await _sendDebugPackage(context);
-                    },
+                  const SizedBox(width: 12),
+                  Expanded(
+                    child: _SmallActionCard(
+                      title: 'Update',
+                      subtitle: 'Check for new version',
+                      color: AppColors.violet,
+                      icon: Icons.refresh_rounded,
+                      onTap: () async => _openAndroidDownload(context),
+                    ),
                   ),
-                  const SizedBox(height: 12),
-                  _AutomationCard(
-                    title: 'Update',
-                    subtitle: 'Download latest Android APK',
-                    status: 'GitHub',
-                    icon: Icons.system_update_alt_rounded,
-                    onTap: () async {
-                      await _openAndroidDownload(context);
-                    },
-                  ),
-                  const Spacer(),
-                  _LogPreview(log: _log),
                 ],
               ),
-            );
-          },
+              const SizedBox(height: 20),
+              const _SectionLabel('Log'),
+              const SizedBox(height: 8),
+              _LogPreview(log: _log),
+            ],
+          ),
         ),
       ),
     );
@@ -547,102 +552,110 @@ class _OwnerSelectionPageState extends State<OwnerSelectionPage> {
   Widget build(BuildContext context) {
     return Scaffold(
       body: SafeArea(
-        child: Padding(
-          padding: const EdgeInsets.all(16),
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.stretch,
-            children: [
-              _BackHeader(onBack: () => Navigator.of(context).pop()),
-              const SizedBox(height: 14),
-              const _AppHeader(title: "Owner's Selection", subtitle: 'NTE automation'),
-              const SizedBox(height: 18),
-              _Panel(
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            Padding(
+              padding: const EdgeInsets.fromLTRB(20, 18, 20, 14),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  _BackHeader(onBack: () => Navigator.of(context).pop()),
+                  const SizedBox(height: 20),
+                  const _AppHeader(title: "Owner's Selection", subtitle: 'NTE automation'),
+                ],
+              ),
+            ),
+            Expanded(
+              child: SingleChildScrollView(
+                padding: const EdgeInsets.fromLTRB(20, 0, 20, 24),
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.stretch,
                   children: [
-                    TextField(
-                      controller: _amountController,
-                      keyboardType: TextInputType.number,
-                      style: const TextStyle(fontSize: 22, fontWeight: FontWeight.w800),
-                      decoration: const InputDecoration(
-                        labelText: 'City Stamina',
-                        hintText: 'Amount',
-                        border: OutlineInputBorder(),
-                      ),
-                    ),
-                    const SizedBox(height: 12),
-                    SegmentedButton<String>(
-                      segments: const [
-                        ButtonSegment(value: '1-9', label: Text('1-9')),
-                        ButtonSegment(value: '1-1', label: Text('1-1')),
-                      ],
-                      selected: {_stage},
-                      onSelectionChanged: (value) => setState(() => _stage = value.first),
-                    ),
-                    const SizedBox(height: 16),
-                    ValueListenableBuilder<bool>(
-                      valueListenable: _controller.isRunning,
-                      builder: (context, running, _) {
-                        return FilledButton.icon(
-                          onPressed: () {
-                            if (running) {
-                              _controller.stop();
-                              unawaited(_controlController.setControlRunning(false));
-                            } else {
-                              _controller.start(
-                                amount: _amountController.text,
-                                stage: _stage,
-                              );
-                              unawaited(_controlController.setControlRunning(true));
-                            }
-                          },
-                          style: FilledButton.styleFrom(
-                            backgroundColor: running ? AppColors.danger : AppColors.primary,
-                            foregroundColor: running ? Colors.white : Colors.black,
-                            padding: const EdgeInsets.symmetric(vertical: 16),
-                          ),
-                          icon: Icon(running ? Icons.stop_rounded : Icons.play_arrow_rounded),
-                          label: Text(running ? 'Stop' : 'Run'),
-                        );
-                      },
-                    ),
-                    const SizedBox(height: 10),
-                    OutlinedButton.icon(
-                      onPressed: _toggleNotificationControl,
-                      icon: Icon(
-                        _notificationControlVisible
-                            ? Icons.notifications_off_rounded
-                            : Icons.notifications_active_rounded,
-                      ),
-                      label: Text(
-                        _notificationControlVisible
-                            ? 'Hide notification control'
-                            : 'Show notification control',
-                      ),
-                    ),
-                    const SizedBox(height: 10),
-                    OutlinedButton.icon(
-                      onPressed: () => sendMobileDebugPackage(context, _log),
-                      icon: const Icon(Icons.bug_report_rounded),
-                      label: const Text('Send debug log'),
-                    ),
-                    const SizedBox(height: 8),
-                    Text(
-                      _notificationPermissionGranted
-                          ? 'Notification control is ready.'
-                          : 'Notification permission is needed on Android 13+.',
-                      style: const TextStyle(color: AppColors.muted, fontSize: 12),
-                    ),
+              _AmountCard(controller: _amountController),
+              const SizedBox(height: 12),
+              _StageSelector(
+                value: _stage,
+                onChanged: (value) => setState(() => _stage = value),
+              ),
+              const SizedBox(height: 12),
+              ValueListenableBuilder<bool>(
+                valueListenable: _controller.isRunning,
+                builder: (context, running, _) {
+                  return ValueListenableBuilder<int>(
+                    valueListenable: _controller.elapsedSeconds,
+                    builder: (context, elapsed, _) {
+                      if (!running && elapsed == 0) return const SizedBox.shrink();
+                      return Padding(
+                        padding: const EdgeInsets.only(bottom: 12),
+                        child: _MetricStrip(label: 'Elapsed', value: _formatElapsed(elapsed)),
+                      );
+                    },
+                  );
+                },
+              ),
+              ValueListenableBuilder<bool>(
+                valueListenable: _controller.isRunning,
+                builder: (context, running, _) {
+                  return _RunButton(
+                    running: running,
+                    onPressed: () => _toggleRun(running),
+                  );
+                },
+              ),
+              const SizedBox(height: 12),
+              _ActionRow(
+                icon: _notificationControlVisible
+                    ? Icons.notifications_off_rounded
+                    : Icons.notifications_active_rounded,
+                title: 'Notification control',
+                onTap: _toggleNotificationControl,
+              ),
+              const SizedBox(height: 8),
+              _ActionRow(
+                icon: Icons.send_rounded,
+                title: 'Send debug log',
+                onTap: () => sendMobileDebugPackage(context, _log),
+              ),
+              const SizedBox(height: 12),
+              _StatusNote(
+                active: _notificationPermissionGranted,
+                text: _notificationPermissionGranted
+                    ? 'Notification control is ready'
+                    : 'Notification permission is needed',
+              ),
+              const SizedBox(height: 18),
+              _LogSectionHeader(runningListenable: _controller.isRunning),
+              const SizedBox(height: 8),
+              SizedBox(height: 160, child: _LogPanel(log: _log)),
                   ],
                 ),
               ),
-              const SizedBox(height: 12),
-              Expanded(child: _LogPanel(log: _log)),
-            ],
-          ),
+            ),
+          ],
         ),
       ),
     );
+  }
+
+  void _toggleRun(bool running) {
+    if (running) {
+      _controller.stop();
+      unawaited(_controlController.setControlRunning(false));
+      return;
+    }
+
+    _controller.start(
+      amount: _amountController.text,
+      stage: _stage,
+    );
+    unawaited(_controlController.setControlRunning(_controller.isRunning.value));
+  }
+
+  String _formatElapsed(int seconds) {
+    final minutes = seconds ~/ 60;
+    final rest = seconds % 60;
+    return '${minutes.toString().padLeft(2, '0')}:${rest.toString().padLeft(2, '0')}';
   }
 
   Future<void> _refreshNotificationPermission() async {
@@ -740,12 +753,17 @@ class _AppHeader extends StatelessWidget {
       children: [
         Text(
           title,
-          style: const TextStyle(fontSize: 30, fontWeight: FontWeight.w900, letterSpacing: 0),
+          style: const TextStyle(
+            color: AppColors.text,
+            fontSize: 22,
+            fontWeight: FontWeight.w800,
+            letterSpacing: 0,
+          ),
         ),
-        const SizedBox(height: 4),
+        const SizedBox(height: 2),
         Text(
           subtitle,
-          style: const TextStyle(color: AppColors.blue, fontSize: 15, fontWeight: FontWeight.w700),
+          style: const TextStyle(color: AppColors.muted, fontSize: 12, fontWeight: FontWeight.w500),
         ),
       ],
     );
@@ -759,65 +777,91 @@ class _BackHeader extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return Align(
-      alignment: Alignment.centerLeft,
-      child: OutlinedButton.icon(
-        onPressed: onBack,
-        icon: const Icon(Icons.arrow_back_rounded),
-        label: const Text('Hub'),
+    return TextButton.icon(
+      onPressed: onBack,
+      style: TextButton.styleFrom(
+        foregroundColor: AppColors.primary,
+        padding: EdgeInsets.zero,
+        minimumSize: const Size(0, 34),
+        tapTargetSize: MaterialTapTargetSize.shrinkWrap,
       ),
+      icon: const Icon(Icons.arrow_back_rounded, size: 16),
+      label: const Text('Hub', style: TextStyle(fontSize: 13, fontWeight: FontWeight.w600)),
     );
   }
 }
 
-class _AutomationCard extends StatelessWidget {
-  const _AutomationCard({
-    required this.title,
-    required this.subtitle,
-    required this.status,
-    required this.icon,
-    required this.onTap,
-  });
+class _PrimaryAutomationCard extends StatelessWidget {
+  const _PrimaryAutomationCard({required this.onTap});
 
-  final String title;
-  final String subtitle;
-  final String status;
-  final IconData icon;
   final VoidCallback onTap;
 
   @override
   Widget build(BuildContext context) {
     return Material(
-      color: AppColors.card,
-      borderRadius: BorderRadius.circular(18),
+      color: AppColors.surface,
+      borderRadius: BorderRadius.circular(20),
       child: InkWell(
         onTap: onTap,
-        borderRadius: BorderRadius.circular(18),
+        borderRadius: BorderRadius.circular(20),
         child: Padding(
-          padding: const EdgeInsets.all(18),
-          child: Row(
+          padding: const EdgeInsets.all(16),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.stretch,
             children: [
-              Container(
-                width: 44,
-                height: 44,
-                decoration: BoxDecoration(
-                  color: AppColors.blue.withValues(alpha: 0.22),
-                  borderRadius: BorderRadius.circular(14),
-                ),
-                child: Icon(icon, color: AppColors.text),
+              Row(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  _IconTile(icon: Icons.layers_rounded, color: AppColors.primary),
+                  const SizedBox(width: 12),
+                  const Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(
+                          'NTE',
+                          style: TextStyle(
+                            color: AppColors.muted,
+                            fontFamily: 'monospace',
+                            fontSize: 11,
+                            fontWeight: FontWeight.w700,
+                            letterSpacing: 1.8,
+                          ),
+                        ),
+                        SizedBox(height: 2),
+                        Text(
+                          "Owner's Selection",
+                          style: TextStyle(color: AppColors.text, fontSize: 15, fontWeight: FontWeight.w700),
+                        ),
+                      ],
+                    ),
+                  ),
+                  const _StatusPill('Ready', active: true),
+                  const SizedBox(width: 8),
+                  const Icon(Icons.chevron_right_rounded, color: AppColors.muted, size: 18),
+                ],
               ),
-              const SizedBox(width: 14),
-              Expanded(
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Text(title, style: const TextStyle(fontSize: 19, fontWeight: FontWeight.w900)),
-                    const SizedBox(height: 4),
-                    Text(subtitle, style: const TextStyle(color: AppColors.muted)),
-                  ],
-                ),
+              const SizedBox(height: 18),
+              Row(
+                children: [
+                  const _MiniMetric(label: 'LAST RUN', value: '--'),
+                  const SizedBox(width: 24),
+                  const _MiniMetric(label: 'RUNS TODAY', value: '0'),
+                  const Spacer(),
+                  Container(
+                    padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 7),
+                    decoration: BoxDecoration(
+                      color: AppColors.primaryDim,
+                      border: Border.all(color: AppColors.primary.withValues(alpha: 0.2)),
+                      borderRadius: BorderRadius.circular(10),
+                    ),
+                    child: const Text(
+                      'Open',
+                      style: TextStyle(color: AppColors.primary, fontSize: 12, fontWeight: FontWeight.w700),
+                    ),
+                  ),
+                ],
               ),
-              _StatusPill(status),
             ],
           ),
         ),
@@ -826,42 +870,471 @@ class _AutomationCard extends StatelessWidget {
   }
 }
 
-class _StatusPill extends StatelessWidget {
-  const _StatusPill(this.text);
+class _SmallActionCard extends StatelessWidget {
+  const _SmallActionCard({
+    required this.title,
+    required this.subtitle,
+    required this.color,
+    required this.icon,
+    required this.onTap,
+  });
 
-  final String text;
+  final String title;
+  final String subtitle;
+  final Color color;
+  final IconData icon;
+  final VoidCallback onTap;
 
   @override
   Widget build(BuildContext context) {
-    return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
-      decoration: BoxDecoration(
-        color: AppColors.primary.withValues(alpha: 0.16),
-        borderRadius: BorderRadius.circular(999),
-      ),
-      child: Text(
-        text,
-        style: const TextStyle(color: AppColors.primary, fontSize: 12, fontWeight: FontWeight.w800),
+    return Material(
+      color: AppColors.surface,
+      borderRadius: BorderRadius.circular(20),
+      child: InkWell(
+        onTap: onTap,
+        borderRadius: BorderRadius.circular(20),
+        child: Padding(
+          padding: const EdgeInsets.all(16),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              _IconTile(icon: icon, color: color, size: 38),
+              const SizedBox(height: 12),
+              Text(title, style: const TextStyle(color: AppColors.text, fontSize: 14, fontWeight: FontWeight.w700)),
+              const SizedBox(height: 2),
+              Text(subtitle, style: const TextStyle(color: AppColors.muted, fontSize: 11, height: 1.2)),
+            ],
+          ),
+        ),
       ),
     );
   }
 }
 
-class _Panel extends StatelessWidget {
-  const _Panel({required this.child});
+class _IconTile extends StatelessWidget {
+  const _IconTile({required this.icon, required this.color, this.size = 40});
 
-  final Widget child;
+  final IconData icon;
+  final Color color;
+  final double size;
 
   @override
   Widget build(BuildContext context) {
     return Container(
-      padding: const EdgeInsets.all(16),
+      width: size,
+      height: size,
       decoration: BoxDecoration(
-        color: AppColors.panel,
+        color: color.withValues(alpha: 0.16),
+        borderRadius: BorderRadius.circular(12),
+      ),
+      child: Icon(icon, color: color, size: 18),
+    );
+  }
+}
+
+class _MiniMetric extends StatelessWidget {
+  const _MiniMetric({required this.label, required this.value});
+
+  final String label;
+  final String value;
+
+  @override
+  Widget build(BuildContext context) {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Text(
+          label,
+          style: const TextStyle(
+            color: AppColors.muted,
+            fontFamily: 'monospace',
+            fontSize: 10,
+            fontWeight: FontWeight.w600,
+          ),
+        ),
+        const SizedBox(height: 2),
+        Text(value, style: const TextStyle(color: AppColors.text, fontSize: 13, fontWeight: FontWeight.w700)),
+      ],
+    );
+  }
+}
+
+class _AmountCard extends StatelessWidget {
+  const _AmountCard({required this.controller});
+
+  final TextEditingController controller;
+
+  @override
+  Widget build(BuildContext context) {
+    return _Surface(
+      padding: const EdgeInsets.all(16),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          const Text(
+            'City Stamina',
+            style: TextStyle(
+              color: AppColors.muted,
+              fontFamily: 'monospace',
+              fontSize: 10,
+              fontWeight: FontWeight.w700,
+              letterSpacing: 1.8,
+            ),
+          ),
+          TextField(
+            controller: controller,
+            keyboardType: TextInputType.number,
+            cursorColor: AppColors.primary,
+            style: const TextStyle(color: AppColors.text, fontSize: 28, fontWeight: FontWeight.w800),
+            decoration: const InputDecoration(
+              hintText: 'Amount',
+              hintStyle: TextStyle(color: AppColors.dim, fontSize: 28, fontWeight: FontWeight.w800),
+              border: InputBorder.none,
+              isDense: true,
+              contentPadding: EdgeInsets.only(top: 8, bottom: 2),
+            ),
+          ),
+          const Text('stamina points to spend', style: TextStyle(color: AppColors.muted, fontSize: 11)),
+        ],
+      ),
+    );
+  }
+}
+
+class _StageSelector extends StatelessWidget {
+  const _StageSelector({required this.value, required this.onChanged});
+
+  final String value;
+  final ValueChanged<String> onChanged;
+
+  @override
+  Widget build(BuildContext context) {
+    return _Surface(
+      color: AppColors.panel,
+      padding: const EdgeInsets.all(6),
+      child: Row(
+        children: ['1-9', '1-1'].map((stage) {
+          final selected = value == stage;
+          return Expanded(
+            child: Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 3),
+              child: Material(
+                color: selected ? AppColors.primaryDim : Colors.transparent,
+                borderRadius: BorderRadius.circular(14),
+                child: InkWell(
+                  onTap: () => onChanged(stage),
+                  borderRadius: BorderRadius.circular(14),
+                  child: Container(
+                    padding: const EdgeInsets.symmetric(vertical: 11),
+                    decoration: BoxDecoration(
+                      border: Border.all(
+                        color: selected ? AppColors.primary.withValues(alpha: 0.22) : Colors.transparent,
+                      ),
+                      borderRadius: BorderRadius.circular(14),
+                    ),
+                    child: Text(
+                      'Stage $stage',
+                      textAlign: TextAlign.center,
+                      style: TextStyle(
+                        color: selected ? AppColors.primary : AppColors.muted,
+                        fontSize: 13,
+                        fontWeight: FontWeight.w700,
+                      ),
+                    ),
+                  ),
+                ),
+              ),
+            ),
+          );
+        }).toList(),
+      ),
+    );
+  }
+}
+
+class _StatusPill extends StatelessWidget {
+  const _StatusPill(this.text, {this.active = false});
+
+  final String text;
+  final bool active;
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+      decoration: BoxDecoration(
+        color: active ? AppColors.primaryDim : Colors.white.withValues(alpha: 0.05),
+        border: Border.all(color: active ? AppColors.primary.withValues(alpha: 0.22) : Colors.transparent),
+        borderRadius: BorderRadius.circular(999),
+      ),
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          if (active) ...[
+            Container(
+              width: 6,
+              height: 6,
+              decoration: const BoxDecoration(color: AppColors.primary, shape: BoxShape.circle),
+            ),
+            const SizedBox(width: 5),
+          ],
+          Text(
+            text,
+            style: TextStyle(
+              color: active ? AppColors.primary : AppColors.muted,
+              fontSize: 10,
+              fontWeight: FontWeight.w800,
+              letterSpacing: 0.2,
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _Surface extends StatelessWidget {
+  const _Surface({
+    required this.child,
+    this.color = AppColors.surface,
+    this.padding = const EdgeInsets.all(16),
+  });
+
+  final Widget child;
+  final Color color;
+  final EdgeInsetsGeometry padding;
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      padding: padding,
+      decoration: BoxDecoration(
+        color: color,
         border: Border.all(color: AppColors.border),
-        borderRadius: BorderRadius.circular(18),
+        borderRadius: BorderRadius.circular(20),
       ),
       child: child,
+    );
+  }
+}
+
+class _RunButton extends StatelessWidget {
+  const _RunButton({required this.running, required this.onPressed});
+
+  final bool running;
+  final VoidCallback onPressed;
+
+  @override
+  Widget build(BuildContext context) {
+    final bg = running ? AppColors.dangerDim : AppColors.primaryDim;
+    final fg = running ? AppColors.danger : AppColors.primary;
+    return Material(
+      color: bg,
+      borderRadius: BorderRadius.circular(20),
+      child: InkWell(
+        onTap: onPressed,
+        borderRadius: BorderRadius.circular(20),
+        child: Container(
+          padding: const EdgeInsets.symmetric(vertical: 16),
+          decoration: BoxDecoration(
+            border: Border.all(color: fg.withValues(alpha: 0.3), width: 1.5),
+            borderRadius: BorderRadius.circular(20),
+          ),
+          child: Row(
+            mainAxisAlignment: MainAxisAlignment.center,
+            children: [
+              Icon(running ? Icons.stop_rounded : Icons.play_arrow_rounded, color: fg, size: 19),
+              const SizedBox(width: 8),
+              Text(
+                running ? 'Stop' : 'Run',
+                style: TextStyle(color: fg, fontSize: 16, fontWeight: FontWeight.w800),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+class _ActionRow extends StatelessWidget {
+  const _ActionRow({required this.icon, required this.title, required this.onTap});
+
+  final IconData icon;
+  final String title;
+  final VoidCallback onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    return Material(
+      color: AppColors.surface,
+      borderRadius: BorderRadius.circular(16),
+      child: InkWell(
+        onTap: onTap,
+        borderRadius: BorderRadius.circular(16),
+        child: Container(
+          padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 13),
+          decoration: BoxDecoration(
+            border: Border.all(color: AppColors.border),
+            borderRadius: BorderRadius.circular(16),
+          ),
+          child: Row(
+            children: [
+              Icon(icon, color: AppColors.sub, size: 17),
+              const SizedBox(width: 12),
+              Expanded(
+                child: Text(title, style: const TextStyle(color: AppColors.text, fontSize: 13, fontWeight: FontWeight.w600)),
+              ),
+              const Icon(Icons.chevron_right_rounded, color: AppColors.muted, size: 18),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+class _StatusNote extends StatelessWidget {
+  const _StatusNote({required this.active, required this.text});
+
+  final bool active;
+  final String text;
+
+  @override
+  Widget build(BuildContext context) {
+    return Row(
+      children: [
+        Container(
+          width: 7,
+          height: 7,
+          decoration: BoxDecoration(
+            color: active ? AppColors.primary : AppColors.danger,
+            shape: BoxShape.circle,
+          ),
+        ),
+        const SizedBox(width: 8),
+        Text(text, style: const TextStyle(color: AppColors.muted, fontSize: 11)),
+      ],
+    );
+  }
+}
+
+class _MetricStrip extends StatelessWidget {
+  const _MetricStrip({required this.label, required this.value});
+
+  final String label;
+  final String value;
+
+  @override
+  Widget build(BuildContext context) {
+    return _Surface(
+      color: AppColors.panel,
+      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 11),
+      child: Row(
+        children: [
+          Text(
+            label,
+            style: const TextStyle(
+              color: AppColors.muted,
+              fontFamily: 'monospace',
+              fontSize: 11,
+              fontWeight: FontWeight.w700,
+              letterSpacing: 1.3,
+            ),
+          ),
+          const Spacer(),
+          Text(
+            value,
+            style: const TextStyle(
+              color: AppColors.text,
+              fontFamily: 'monospace',
+              fontSize: 15,
+              fontWeight: FontWeight.w800,
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _SectionLabel extends StatelessWidget {
+  const _SectionLabel(this.text);
+
+  final String text;
+
+  @override
+  Widget build(BuildContext context) {
+    return Row(
+      children: [
+        Text(
+          text,
+          style: const TextStyle(
+            color: AppColors.muted,
+            fontFamily: 'monospace',
+            fontSize: 10,
+            fontWeight: FontWeight.w700,
+            letterSpacing: 1.8,
+          ),
+        ),
+        const SizedBox(width: 8),
+        const Expanded(child: Divider(color: AppColors.border, height: 1)),
+      ],
+    );
+  }
+}
+
+class _RunningPill extends StatelessWidget {
+  const _RunningPill();
+
+  @override
+  Widget build(BuildContext context) {
+    return const Row(
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        Icon(Icons.circle, color: AppColors.warning, size: 7),
+        SizedBox(width: 5),
+        Text(
+          'Running',
+          style: TextStyle(
+            color: AppColors.warning,
+            fontFamily: 'monospace',
+            fontSize: 10,
+            fontWeight: FontWeight.w700,
+          ),
+        ),
+      ],
+    );
+  }
+}
+
+class _LogSectionHeader extends StatelessWidget {
+  const _LogSectionHeader({required this.runningListenable});
+
+  final ValueListenable<bool> runningListenable;
+
+  @override
+  Widget build(BuildContext context) {
+    return Row(
+      children: [
+        const Text(
+          'Log',
+          style: TextStyle(
+            color: AppColors.muted,
+            fontFamily: 'monospace',
+            fontSize: 10,
+            fontWeight: FontWeight.w700,
+            letterSpacing: 1.8,
+          ),
+        ),
+        const SizedBox(width: 8),
+        const Expanded(child: Divider(color: AppColors.border, height: 1)),
+        const SizedBox(width: 8),
+        ValueListenableBuilder<bool>(
+          valueListenable: runningListenable,
+          builder: (context, running, _) => running ? const _RunningPill() : const SizedBox.shrink(),
+        ),
+      ],
     );
   }
 }
@@ -884,30 +1357,111 @@ class _LogPanel extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return _Panel(
+    return _Surface(
+      color: AppColors.log,
+      padding: const EdgeInsets.all(12),
       child: ValueListenableBuilder<List<String>>(
         valueListenable: log.lines,
         builder: (context, lines, _) {
           final visible = lines.reversed.take(24).toList().reversed;
           return SingleChildScrollView(
             reverse: true,
-            child: Text(
-              visible.map(_formatLine).join('\n'),
-              style: const TextStyle(
-                color: AppColors.text,
-                fontFamily: 'monospace',
-                fontSize: 12,
-                height: 1.45,
-              ),
-            ),
+            child: visible.isEmpty
+                ? const Text(
+                    'No log output yet.',
+                    style: TextStyle(color: AppColors.dim, fontFamily: 'monospace', fontSize: 11),
+                  )
+                : Column(
+                    crossAxisAlignment: CrossAxisAlignment.stretch,
+                    children: visible.map(_LogLineView.new).toList(),
+                  ),
           );
         },
       ),
     );
   }
+}
 
-  String _formatLine(String line) {
-    final marker = line.indexOf('] ');
-    return marker >= 0 ? line.substring(marker + 2) : line;
+class _LogLineView extends StatelessWidget {
+  const _LogLineView(this.line);
+
+  final String line;
+
+  @override
+  Widget build(BuildContext context) {
+    final parsed = _ParsedLogLine.parse(line);
+    final color = switch (parsed.level) {
+      'INFO' => AppColors.sub,
+      'WARN' => AppColors.warning,
+      'ERROR' => AppColors.danger,
+      _ => AppColors.primary,
+    };
+
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 3),
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          SizedBox(
+            width: 47,
+            child: Text(
+              parsed.time,
+              style: const TextStyle(color: AppColors.dim, fontFamily: 'monospace', fontSize: 11),
+            ),
+          ),
+          Container(
+            padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 1),
+            decoration: BoxDecoration(
+              color: color.withValues(alpha: 0.10),
+              borderRadius: BorderRadius.circular(4),
+            ),
+            child: Text(
+              parsed.shortLevel,
+              style: TextStyle(color: color, fontFamily: 'monospace', fontSize: 10, fontWeight: FontWeight.w700),
+            ),
+          ),
+          const SizedBox(width: 7),
+          Expanded(
+            child: Text(
+              parsed.message,
+              style: TextStyle(
+                color: parsed.level == 'INFO' ? AppColors.sub : color,
+                fontFamily: 'monospace',
+                fontSize: 11,
+                height: 1.35,
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _ParsedLogLine {
+  const _ParsedLogLine({
+    required this.time,
+    required this.level,
+    required this.message,
+  });
+
+  final String time;
+  final String level;
+  final String message;
+
+  String get shortLevel => level == 'ERROR' ? 'ERR' : level == 'INFO' ? 'INFO' : level;
+
+  static _ParsedLogLine parse(String line) {
+    final time = line.length >= 19 ? line.substring(11, 19) : '--:--:--';
+    final start = line.indexOf('[');
+    final end = line.indexOf('] ');
+    if (start >= 0 && end > start) {
+      return _ParsedLogLine(
+        time: time,
+        level: line.substring(start + 1, end),
+        message: line.substring(end + 2),
+      );
+    }
+    return _ParsedLogLine(time: time, level: 'INFO', message: line);
   }
 }
