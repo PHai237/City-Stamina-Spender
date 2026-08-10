@@ -58,7 +58,7 @@ class AppColors {
 }
 
 class AppInfo {
-  static const version = '1.0.7';
+  static const version = '1.0.8';
   static const androidApkUrl =
       'https://github.com/PHai237/City-Stamina-Spender/releases/latest/download/City.Stamina.Mobile.apk';
 }
@@ -67,11 +67,29 @@ class MobileLogService {
   MobileLogService._();
 
   static final MobileLogService instance = MobileLogService._();
+  static const _maxLogBytes = 256 * 1024;
+  static const _trimmedLogBytes = 128 * 1024;
 
   final ValueNotifier<List<String>> lines = ValueNotifier<List<String>>([]);
+  File? _logFile;
+  bool _initialized = false;
 
   Future<void> init() async {
-    if (lines.value.isEmpty) info('Mobile app started');
+    if (_initialized) return;
+    _initialized = true;
+    final dir = await getApplicationDocumentsDirectory();
+    final logDir = Directory(p.join(dir.path, 'logs'));
+    await logDir.create(recursive: true);
+    _logFile = File(p.join(logDir.path, 'mobile.log'));
+    await _rotateIfNeeded();
+    info('Mobile app started');
+  }
+
+  Future<String> readLogText() async {
+    await init();
+    final file = _logFile;
+    if (file == null || !await file.exists()) return '';
+    return file.readAsString();
   }
 
   void info(String message) => _write('INFO', message);
@@ -85,6 +103,38 @@ class MobileLogService {
     final line = '$stamp [$level] $message';
     final next = [...lines.value, line];
     lines.value = next.length > 24 ? next.sublist(next.length - 24) : next;
+    final file = _logFile;
+    if (file != null) {
+      unawaited(_appendToFile(file, line));
+    }
+  }
+
+  Future<void> _appendToFile(File file, String line) async {
+    try {
+      await file.writeAsString('$line\n', mode: FileMode.append, flush: false);
+      await _rotateIfNeeded();
+    } catch (_) {
+      // Logging must never interrupt the app.
+    }
+  }
+
+  Future<void> _rotateIfNeeded() async {
+    final file = _logFile;
+    if (file == null || !await file.exists()) return;
+    final length = await file.length();
+    if (length <= _maxLogBytes) return;
+
+    final bytes = await file.readAsBytes();
+    final keepStart = bytes.length > _trimmedLogBytes
+        ? bytes.length - _trimmedLogBytes
+        : 0;
+    final kept = bytes.sublist(keepStart);
+    await file.writeAsBytes([
+      ...utf8.encode(
+        '--- log trimmed at ${DateTime.now().toIso8601String()} ---\n',
+      ),
+      ...kept,
+    ], flush: true);
   }
 }
 
@@ -115,19 +165,30 @@ class MobileDiagnosticsService {
     if (!Platform.isAndroid) {
       return {'platform': Platform.operatingSystem, 'android': false};
     }
+    log.info('Reading Android device info.');
     final result = await _channel.invokeMethod<Map<dynamic, dynamic>>(
       'getDeviceInfo',
     );
-    return Map<String, dynamic>.from(result ?? {});
+    final info = Map<String, dynamic>.from(result ?? {});
+    log.info(
+      'Device info: ${info['manufacturer'] ?? ''} ${info['model'] ?? ''}, '
+      '${info['screenWidth'] ?? '?'}x${info['screenHeight'] ?? '?'}, '
+      'dpi=${info['densityDpi'] ?? '?'}.',
+    );
+    return info;
   }
 
   Future<bool> isAccessibilityEnabled() async {
     if (!Platform.isAndroid) return false;
-    return await _channel.invokeMethod<bool>('isAccessibilityEnabled') ?? false;
+    final enabled =
+        await _channel.invokeMethod<bool>('isAccessibilityEnabled') ?? false;
+    log.info('Accessibility permission: ${enabled ? 'enabled' : 'disabled'}.');
+    return enabled;
   }
 
   Future<void> openAccessibilitySettings() async {
     if (!Platform.isAndroid) return;
+    log.info('Opening Accessibility settings.');
     await _channel.invokeMethod<void>('openAccessibilitySettings');
   }
 
@@ -135,10 +196,16 @@ class MobileDiagnosticsService {
     if (!Platform.isAndroid) {
       throw StateError('Screen capture is Android-only.');
     }
+    log.info('Requesting screen capture permission.');
     final result = await _channel.invokeMethod<Map<dynamic, dynamic>>(
       'captureScreen',
     );
-    return Map<String, dynamic>.from(result ?? {});
+    final capture = Map<String, dynamic>.from(result ?? {});
+    log.info(
+      'Screen captured: ${capture['width'] ?? '?'}x${capture['height'] ?? '?'} '
+      'dpi=${capture['densityDpi'] ?? '?'}.',
+    );
+    return capture;
   }
 
   Future<bool> hasWebhookConfigured() async {
@@ -159,8 +226,10 @@ class MobileDiagnosticsService {
 
   Future<String> sendDiagnosticsToDiscord() async {
     await log.init();
+    log.info('Diagnostics started.');
     final webhookUrl = await _readWebhookUrl();
     if (webhookUrl == null) {
+      log.warn('Diagnostics stopped: Discord webhook is not configured.');
       throw StateError('Discord webhook is not configured.');
     }
 
@@ -186,24 +255,29 @@ class MobileDiagnosticsService {
       reportFile = File(
         p.join(tempDir.path, 'city-stamina-mobile-diagnostics-$stamp.txt'),
       );
+      final fileLogText = await log.readLogText();
       await reportFile.writeAsString(
         _buildReport(
           deviceInfo: deviceInfo,
           accessibilityEnabled: accessibilityEnabled,
           capture: capture,
+          fileLogText: fileLogText,
         ),
         flush: true,
       );
 
+      log.info('Uploading diagnostics to Discord.');
       await _sendFiles(webhookUrl, [
         reportFile,
         if (screenshotFile != null && await screenshotFile.exists())
           screenshotFile,
       ]);
+      log.info('Diagnostics uploaded to Discord.');
       return 'Diagnostics sent.';
     } finally {
       await _deleteIfExists(reportFile);
       await _deleteIfExists(screenshotFile);
+      log.info('Temporary diagnostics files deleted.');
     }
   }
 
@@ -263,6 +337,7 @@ class MobileDiagnosticsService {
     required Map<String, dynamic> deviceInfo,
     required bool accessibilityEnabled,
     required Map<String, dynamic>? capture,
+    required String fileLogText,
   }) {
     final buffer = StringBuffer()
       ..writeln('City Stamina Mobile diagnostics')
@@ -288,6 +363,10 @@ class MobileDiagnosticsService {
     for (final line in log.lines.value) {
       buffer.writeln(line);
     }
+    buffer
+      ..writeln('')
+      ..writeln('==== FILE LOG ====')
+      ..write(fileLogText.isEmpty ? 'empty\n' : fileLogText);
     return buffer.toString();
   }
 
@@ -522,7 +601,10 @@ Future<void> sendMobileDiagnostics(
       if (!context.mounted) return;
       final webhookUrl = await askWebhookUrl(context);
       if (!context.mounted) return;
-      if (webhookUrl == null) return;
+      if (webhookUrl == null) {
+        diagnostics.log.warn('Diagnostics canceled: no webhook entered.');
+        return;
+      }
       await diagnostics.saveWebhookUrl(webhookUrl);
     }
 
@@ -532,6 +614,7 @@ Future<void> sendMobileDiagnostics(
     final message = await diagnostics.sendDiagnosticsToDiscord();
     messenger.showSnackBar(SnackBar(content: Text(message)));
   } catch (error) {
+    diagnostics.log.error('Diagnostics failed: $error');
     messenger.showSnackBar(
       SnackBar(content: Text('Diagnostics failed: ${formatUserError(error)}')),
     );
