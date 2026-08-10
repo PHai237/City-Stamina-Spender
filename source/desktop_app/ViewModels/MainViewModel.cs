@@ -19,7 +19,7 @@ namespace CityStamina.Avalonia.ViewModels;
 
 public partial class MainViewModel : ViewModelBase
 {
-    public const string AppVersion = "1.2.26";
+    public const string AppVersion = "1.2.27";
     private const string LatestManifestUrl = "https://raw.githubusercontent.com/PHai237/City-Stamina-Spender/main/latest.json";
     private const string StageOneNine = "Stage 1-9";
     private const string StageOneOne = "Stage 1-1";
@@ -54,7 +54,7 @@ public partial class MainViewModel : ViewModelBase
     private bool _stopRequested;
     private bool _automationReachedTarget;
     private int _sessionSpent;
-    private int _currentRunSpent;
+    private int _currentProcessSpent;
     private int _runsToday;
     private string _latestDownloadUrl = "";
     private string _lastUiLogLine = "";
@@ -190,7 +190,7 @@ public partial class MainViewModel : ViewModelBase
         IsRunning = true;
         _runsToday++;
         RefreshHubMetrics();
-        _currentRunSpent = 0;
+        _currentProcessSpent = 0;
         SpentSoFar = FormatAmount(_sessionSpent);
         OrdersDetected = "0 / 0";
         OrdersDone = "0";
@@ -233,6 +233,7 @@ public partial class MainViewModel : ViewModelBase
             }
 
             AppendLog($"Game found: {game.Value.Width}x{game.Value.Height} ({game.Value.Title})");
+            AppendLog("Starting automation...");
 
             if (_stopRequested)
             {
@@ -293,8 +294,8 @@ public partial class MainViewModel : ViewModelBase
                 AppendLog("Stopped.");
             }
             _ownerProcess = null;
-            _sessionSpent += _currentRunSpent;
-            _currentRunSpent = 0;
+            _sessionSpent += _currentProcessSpent;
+            _currentProcessSpent = 0;
             SpentSoFar = FormatAmount(_sessionSpent);
             StopElapsedTimer();
             IsRunning = false;
@@ -848,6 +849,7 @@ public partial class MainViewModel : ViewModelBase
             @"^Run\s+\d+:\s*([\d,.]+)\s*/\s*[\d,.]+\s+City Stamina",
             @"\bTotal\s+([\d,.]+)\s*/\s*[\d,.]+\s+City Stamina",
             @"\bSpent\s+([\d,.]+)\s*/\s*[\d,.]+\s+City Stamina",
+            @"\bSpent\s+\d+\s+City Stamina\.\s+Total\s+([\d,.]+)\s*/\s*[\d,.]+\s+City Stamina",
             @"\bTarget reached:\s*spent\s+([\d,.]+)\s*>=",
         };
 
@@ -859,8 +861,8 @@ public partial class MainViewModel : ViewModelBase
                 continue;
             }
 
-            _currentRunSpent = ParseAmount(match.Groups[1].Value);
-            SpentSoFar = FormatAmount(_sessionSpent + _currentRunSpent);
+            _currentProcessSpent = Math.Max(_currentProcessSpent, ParseAmount(match.Groups[1].Value));
+            SpentSoFar = FormatAmount(_sessionSpent + _currentProcessSpent);
             if (line.Contains("Target reached:", StringComparison.OrdinalIgnoreCase))
             {
                 _automationReachedTarget = true;
