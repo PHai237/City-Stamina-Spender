@@ -21,16 +21,19 @@
 2. Open the downloaded `City.Stamina.Mobile.apk` on your phone.
 3. If Android asks, allow installing apps from your browser or file manager.
 4. Open **City Stamina**.
-5. Open **Owner's Selection** and enable **notification control**.
-6. Pull down the Android notification shade to use the **Run** or **Stop** action while NTE is open.
+5. Open **Owner's Selection**.
+6. Pull down the Android notification shade to enter **Amount** and use **Run** or **Stop** while NTE is open.
+7. Tap **Diagnostics** when you need to send device info and a screen capture to Discord.
 
 The Android app is still a mobile foundation build. It has the hub, Owner's
-Selection screen, Run/Stop state, notification control, and Discord debug logs.
-Full screen capture/tap automation is not wired yet.
+Selection screen, Run/Stop state, notification control, permission checks,
+device info, and Discord diagnostics with a screen capture. Full tap automation
+is not wired yet.
 
 ## Discord debug upload
 
 Create a Discord webhook in your debug channel, then put the webhook URL in
 `discord_webhook.txt` next to `City.Stamina.Spender.exe` on Windows. On Android,
-tap **Debug** once and paste the webhook URL in the popup. Debug packages are
-uploaded to Discord and deleted locally after a successful upload.
+tap **Diagnostics** once and paste the webhook URL in the popup. Diagnostic
+reports and screenshots are uploaded to Discord and deleted locally after the
+upload attempt.

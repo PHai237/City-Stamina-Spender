@@ -1,8 +1,12 @@
 import 'dart:async';
+import 'dart:convert';
 import 'dart:io';
 
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
+import 'package:http/http.dart' as http;
+import 'package:path/path.dart' as p;
+import 'package:path_provider/path_provider.dart';
 import 'package:url_launcher/url_launcher.dart';
 
 void main() {
@@ -54,7 +58,7 @@ class AppColors {
 }
 
 class AppInfo {
-  static const version = '1.0.6';
+  static const version = '1.0.7';
   static const androidApkUrl =
       'https://github.com/PHai237/City-Stamina-Spender/releases/latest/download/City.Stamina.Mobile.apk';
 }
@@ -97,6 +101,227 @@ class AppUpdateService {
       await Clipboard.setData(const ClipboardData(text: AppInfo.androidApkUrl));
       log.warn('Could not open browser. APK link copied to clipboard.');
       throw StateError('Could not open browser. Link copied to clipboard.');
+    }
+  }
+}
+
+class MobileDiagnosticsService {
+  MobileDiagnosticsService(this.log);
+
+  static const _channel = MethodChannel('city_stamina_mobile/control');
+  final MobileLogService log;
+
+  Future<Map<String, dynamic>> getDeviceInfo() async {
+    if (!Platform.isAndroid) {
+      return {'platform': Platform.operatingSystem, 'android': false};
+    }
+    final result = await _channel.invokeMethod<Map<dynamic, dynamic>>(
+      'getDeviceInfo',
+    );
+    return Map<String, dynamic>.from(result ?? {});
+  }
+
+  Future<bool> isAccessibilityEnabled() async {
+    if (!Platform.isAndroid) return false;
+    return await _channel.invokeMethod<bool>('isAccessibilityEnabled') ?? false;
+  }
+
+  Future<void> openAccessibilitySettings() async {
+    if (!Platform.isAndroid) return;
+    await _channel.invokeMethod<void>('openAccessibilitySettings');
+  }
+
+  Future<Map<String, dynamic>> captureScreen() async {
+    if (!Platform.isAndroid) {
+      throw StateError('Screen capture is Android-only.');
+    }
+    final result = await _channel.invokeMethod<Map<dynamic, dynamic>>(
+      'captureScreen',
+    );
+    return Map<String, dynamic>.from(result ?? {});
+  }
+
+  Future<bool> hasWebhookConfigured() async {
+    return await _readWebhookUrl() != null;
+  }
+
+  Future<void> saveWebhookUrl(String webhookUrl) async {
+    final value = _normalizeWebhookUrl(webhookUrl);
+    if (!_isDiscordWebhook(value)) {
+      throw const FormatException('Paste a full Discord webhook URL.');
+    }
+
+    final dir = await getApplicationDocumentsDirectory();
+    final file = File(p.join(dir.path, 'discord_webhook.txt'));
+    await file.writeAsString('$value\n', flush: true);
+    log.info('Discord webhook saved.');
+  }
+
+  Future<String> sendDiagnosticsToDiscord() async {
+    await log.init();
+    final webhookUrl = await _readWebhookUrl();
+    if (webhookUrl == null) {
+      throw StateError('Discord webhook is not configured.');
+    }
+
+    File? reportFile;
+    File? screenshotFile;
+    try {
+      final deviceInfo = await getDeviceInfo();
+      final accessibilityEnabled = await isAccessibilityEnabled();
+      Map<String, dynamic>? capture;
+      try {
+        capture = await captureScreen();
+        final path = (capture['path'] ?? '').toString();
+        if (path.isNotEmpty) screenshotFile = File(path);
+      } catch (error) {
+        log.error('Screen capture failed: $error');
+      }
+
+      final tempDir = await getTemporaryDirectory();
+      final stamp = DateTime.now()
+          .toIso8601String()
+          .replaceAll(':', '')
+          .replaceAll('.', '_');
+      reportFile = File(
+        p.join(tempDir.path, 'city-stamina-mobile-diagnostics-$stamp.txt'),
+      );
+      await reportFile.writeAsString(
+        _buildReport(
+          deviceInfo: deviceInfo,
+          accessibilityEnabled: accessibilityEnabled,
+          capture: capture,
+        ),
+        flush: true,
+      );
+
+      await _sendFiles(webhookUrl, [
+        reportFile,
+        if (screenshotFile != null && await screenshotFile.exists())
+          screenshotFile,
+      ]);
+      return 'Diagnostics sent.';
+    } finally {
+      await _deleteIfExists(reportFile);
+      await _deleteIfExists(screenshotFile);
+    }
+  }
+
+  Future<String?> _readWebhookUrl() async {
+    const envWebhook = String.fromEnvironment('DISCORD_WEBHOOK_URL');
+    final normalizedEnvWebhook = _normalizeWebhookUrl(envWebhook);
+    if (_isDiscordWebhook(normalizedEnvWebhook)) return normalizedEnvWebhook;
+
+    final dir = await getApplicationDocumentsDirectory();
+    final file = File(p.join(dir.path, 'discord_webhook.txt'));
+    if (!await file.exists()) {
+      await file.writeAsString(
+        'Paste one Discord webhook URL on the next line.\n',
+        flush: true,
+      );
+      log.warn('Created discord_webhook.txt. Add a webhook URL first.');
+      return null;
+    }
+
+    final lines = await file.readAsLines();
+    for (final line in lines) {
+      final value = _normalizeWebhookUrl(line);
+      if (_isDiscordWebhook(value)) return value;
+    }
+    return null;
+  }
+
+  String _normalizeWebhookUrl(String value) {
+    var normalized = value.trim();
+    while (normalized.isNotEmpty && '<"\''.contains(normalized[0])) {
+      normalized = normalized.substring(1).trimLeft();
+    }
+    while (normalized.isNotEmpty &&
+        '>"\''.contains(normalized[normalized.length - 1])) {
+      normalized = normalized.substring(0, normalized.length - 1).trimRight();
+    }
+    return normalized;
+  }
+
+  bool _isDiscordWebhook(String value) {
+    final uri = Uri.tryParse(value);
+    if (uri == null || uri.scheme != 'https') return false;
+    const allowedHosts = {
+      'discord.com',
+      'discordapp.com',
+      'canary.discord.com',
+      'ptb.discord.com',
+    };
+    return allowedHosts.contains(uri.host.toLowerCase()) &&
+        uri.pathSegments.length >= 3 &&
+        uri.pathSegments[0] == 'api' &&
+        uri.pathSegments[1] == 'webhooks' &&
+        uri.pathSegments[2].isNotEmpty;
+  }
+
+  String _buildReport({
+    required Map<String, dynamic> deviceInfo,
+    required bool accessibilityEnabled,
+    required Map<String, dynamic>? capture,
+  }) {
+    final buffer = StringBuffer()
+      ..writeln('City Stamina Mobile diagnostics')
+      ..writeln('Mobile version: ${AppInfo.version}')
+      ..writeln('Created: ${DateTime.now().toIso8601String()}')
+      ..writeln(
+        'Platform: ${Platform.operatingSystem} ${Platform.operatingSystemVersion}',
+      )
+      ..writeln('Accessibility enabled: $accessibilityEnabled')
+      ..writeln('')
+      ..writeln('==== DEVICE ====')
+      ..writeln(const JsonEncoder.withIndent('  ').convert(deviceInfo))
+      ..writeln('')
+      ..writeln('==== SCREEN CAPTURE ====')
+      ..writeln(
+        capture == null
+            ? 'failed'
+            : const JsonEncoder.withIndent('  ').convert(capture),
+      )
+      ..writeln('')
+      ..writeln('==== SESSION LOG ====');
+
+    for (final line in log.lines.value) {
+      buffer.writeln(line);
+    }
+    return buffer.toString();
+  }
+
+  Future<void> _sendFiles(String webhookUrl, List<File> files) async {
+    final request = http.MultipartRequest('POST', Uri.parse(webhookUrl));
+    request.fields['payload_json'] = jsonEncode({
+      'content':
+          'City Stamina Mobile diagnostics | ${DateTime.now().toIso8601String()}',
+    });
+    for (var i = 0; i < files.length; i += 1) {
+      request.files.add(
+        await http.MultipartFile.fromPath(
+          'files[$i]',
+          files[i].path,
+          filename: p.basename(files[i].path),
+        ),
+      );
+    }
+
+    final response = await request.send();
+    final body = await response.stream.bytesToString();
+    if (response.statusCode < 200 || response.statusCode >= 300) {
+      throw HttpException(
+        'Discord upload failed: ${response.statusCode} $body',
+      );
+    }
+  }
+
+  Future<void> _deleteIfExists(File? file) async {
+    if (file == null) return;
+    try {
+      if (await file.exists()) await file.delete();
+    } catch (_) {
+      // Temporary diagnostics cleanup must not hide the useful upload result.
     }
   }
 }
@@ -205,11 +430,18 @@ class AutomationHubPage extends StatefulWidget {
 
 class _AutomationHubPageState extends State<AutomationHubPage> {
   final _log = MobileLogService.instance;
+  late final AndroidControlController _controlController;
+  late final MobileDiagnosticsService _diagnostics;
 
   @override
   void initState() {
     super.initState();
+    _controlController = AndroidControlController(_log);
+    _diagnostics = MobileDiagnosticsService(_log);
     unawaited(_log.init());
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      unawaited(_ensureNotificationControl());
+    });
   }
 
   @override
@@ -246,6 +478,12 @@ class _AutomationHubPageState extends State<AutomationHubPage> {
                 title: 'Update',
                 onTap: () async => _openAndroidDownload(context),
               ),
+              const SizedBox(height: 10),
+              _ActionRow(
+                icon: Icons.health_and_safety_rounded,
+                title: 'Diagnostics',
+                onTap: () async => _sendDiagnostics(context),
+              ),
             ],
           ),
         ),
@@ -261,6 +499,90 @@ class _AutomationHubPageState extends State<AutomationHubPage> {
       messenger.showSnackBar(SnackBar(content: Text('Update failed: $error')));
     }
   }
+
+  Future<void> _sendDiagnostics(BuildContext context) async {
+    await sendMobileDiagnostics(context, _diagnostics);
+  }
+
+  Future<void> _ensureNotificationControl() async {
+    if (!await _controlController.canPostNotifications()) {
+      await _controlController.requestNotificationPermission();
+    }
+    await _controlController.startControlNotification();
+  }
+}
+
+Future<void> sendMobileDiagnostics(
+  BuildContext context,
+  MobileDiagnosticsService diagnostics,
+) async {
+  final messenger = ScaffoldMessenger.of(context);
+  try {
+    if (!await diagnostics.hasWebhookConfigured()) {
+      if (!context.mounted) return;
+      final webhookUrl = await askWebhookUrl(context);
+      if (!context.mounted) return;
+      if (webhookUrl == null) return;
+      await diagnostics.saveWebhookUrl(webhookUrl);
+    }
+
+    messenger.showSnackBar(
+      const SnackBar(content: Text('Capturing diagnostics...')),
+    );
+    final message = await diagnostics.sendDiagnosticsToDiscord();
+    messenger.showSnackBar(SnackBar(content: Text(message)));
+  } catch (error) {
+    messenger.showSnackBar(
+      SnackBar(content: Text('Diagnostics failed: ${formatUserError(error)}')),
+    );
+  }
+}
+
+String formatUserError(Object error) {
+  if (error is FormatException) return error.message;
+  if (error is StateError) return error.message;
+  if (error is PlatformException) return error.message ?? error.code;
+  return error
+      .toString()
+      .replaceFirst('Exception: ', '')
+      .replaceFirst('Bad state: ', '')
+      .replaceFirst('FormatException: ', '');
+}
+
+Future<String?> askWebhookUrl(BuildContext context) async {
+  final controller = TextEditingController();
+  try {
+    return await showDialog<String>(
+      context: context,
+      builder: (context) {
+        return AlertDialog(
+          title: const Text('Discord webhook'),
+          content: TextField(
+            controller: controller,
+            autofocus: true,
+            minLines: 1,
+            maxLines: 3,
+            decoration: const InputDecoration(
+              hintText: 'https://discord.com/api/webhooks/...',
+              helperText: 'Use the webhook URL, not the Discord channel link.',
+            ),
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.of(context).pop(),
+              child: const Text('Cancel'),
+            ),
+            FilledButton(
+              onPressed: () => Navigator.of(context).pop(controller.text),
+              child: const Text('Save'),
+            ),
+          ],
+        );
+      },
+    );
+  } finally {
+    controller.dispose();
+  }
 }
 
 class OwnerSelectionPage extends StatefulWidget {
@@ -274,6 +596,7 @@ class _OwnerSelectionPageState extends State<OwnerSelectionPage> {
   final _log = MobileLogService.instance;
   late final OwnerAutomationController _controller;
   late final AndroidControlController _controlController;
+  late final MobileDiagnosticsService _diagnostics;
   final _amountController = TextEditingController();
   StreamSubscription<Map<String, dynamic>>? _controlSubscription;
   String _stage = '1-1';
@@ -284,6 +607,7 @@ class _OwnerSelectionPageState extends State<OwnerSelectionPage> {
     super.initState();
     _controller = OwnerAutomationController(_log);
     _controlController = AndroidControlController(_log);
+    _diagnostics = MobileDiagnosticsService(_log);
     _amountController.addListener(() {
       unawaited(_controlController.setControlAmount(_amountController.text));
     });
@@ -374,6 +698,19 @@ class _OwnerSelectionPageState extends State<OwnerSelectionPage> {
                       title: 'Update',
                       onTap: () async => _openAndroidDownload(context),
                     ),
+                    const SizedBox(height: 10),
+                    _ActionRow(
+                      icon: Icons.touch_app_rounded,
+                      title: 'Accessibility',
+                      onTap: _openAccessibilitySettings,
+                    ),
+                    const SizedBox(height: 10),
+                    _ActionRow(
+                      icon: Icons.health_and_safety_rounded,
+                      title: 'Diagnostics',
+                      onTap: () async =>
+                          sendMobileDiagnostics(context, _diagnostics),
+                    ),
                     const SizedBox(height: 12),
                     _StatusNote(
                       active: _notificationPermissionGranted,
@@ -442,6 +779,10 @@ class _OwnerSelectionPageState extends State<OwnerSelectionPage> {
     } catch (error) {
       messenger.showSnackBar(SnackBar(content: Text('Update failed: $error')));
     }
+  }
+
+  Future<void> _openAccessibilitySettings() async {
+    await _diagnostics.openAccessibilitySettings();
   }
 
   void _handleControlEvent(Map<String, dynamic> event) {
