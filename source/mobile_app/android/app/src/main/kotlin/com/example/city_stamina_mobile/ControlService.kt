@@ -9,6 +9,7 @@ import android.content.Intent
 import android.os.Build
 import android.os.IBinder
 import androidx.core.app.NotificationCompat
+import androidx.core.app.RemoteInput
 
 class ControlService : Service() {
     companion object {
@@ -16,14 +17,17 @@ class ControlService : Service() {
         const val ACTION_HIDE = "city_stamina_mobile.control.HIDE"
         const val ACTION_SET_RUNNING = "city_stamina_mobile.control.SET_RUNNING"
         const val ACTION_SET_IDLE = "city_stamina_mobile.control.SET_IDLE"
+        const val ACTION_SET_AMOUNT = "city_stamina_mobile.control.SET_AMOUNT"
         const val ACTION_TOGGLE = "city_stamina_mobile.control.TOGGLE"
         const val ACTION_TOGGLE_REQUEST = "city_stamina_mobile.control.TOGGLE_REQUEST"
+        const val KEY_AMOUNT = "city_stamina_mobile.control.AMOUNT"
 
         private const val CHANNEL_ID = "city_stamina_control"
         private const val NOTIFICATION_ID = 1101
     }
 
     private var isRunning = false
+    private var amount = ""
 
     override fun onCreate() {
         super.onCreate()
@@ -45,9 +49,24 @@ class ControlService : Service() {
                 isRunning = false
                 showNotification()
             }
+            ACTION_SET_AMOUNT -> {
+                amount = RemoteInput.getResultsFromIntent(intent)?.getCharSequence(KEY_AMOUNT)?.toString()
+                    ?: intent.getStringExtra(KEY_AMOUNT)
+                    ?: ""
+                sendBroadcast(
+                    Intent(ACTION_TOGGLE_REQUEST)
+                        .putExtra("type", "amount")
+                        .putExtra("amount", amount)
+                )
+                showNotification()
+            }
             ACTION_TOGGLE -> {
                 isRunning = !isRunning
-                sendBroadcast(Intent(ACTION_TOGGLE_REQUEST).putExtra("running", isRunning))
+                sendBroadcast(
+                    Intent(ACTION_TOGGLE_REQUEST)
+                        .putExtra("type", "toggle")
+                        .putExtra("running", isRunning)
+                )
                 showNotification()
             }
             else -> showNotification()
@@ -79,11 +98,22 @@ class ControlService : Service() {
             PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
         )
 
+        val amountPendingIntent = PendingIntent.getService(
+            this,
+            12,
+            Intent(this, ControlService::class.java).setAction(ACTION_SET_AMOUNT),
+            PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_MUTABLE
+        )
+
+        val amountInput = RemoteInput.Builder(KEY_AMOUNT)
+            .setLabel("Amount")
+            .build()
+
         val actionTitle = if (isRunning) "Stop" else "Run"
         val contentText = if (isRunning) {
-            "Automation is running. Tap Stop if needed."
+            "Running ${amount.ifBlank { "stage 1-1" }}. Tap Stop if needed."
         } else {
-            "Ready. Tap Run after entering amount in the app."
+            "Amount: ${amount.ifBlank { "not set" }}. Enter amount or tap Run."
         }
 
         return NotificationCompat.Builder(this, CHANNEL_ID)
@@ -93,6 +123,13 @@ class ControlService : Service() {
             .setOngoing(true)
             .setOnlyAlertOnce(true)
             .setContentIntent(openAppPendingIntent)
+            .addAction(
+                NotificationCompat.Action.Builder(
+                    android.R.drawable.ic_menu_edit,
+                    "Amount",
+                    amountPendingIntent
+                ).addRemoteInput(amountInput).build()
+            )
             .addAction(android.R.drawable.ic_media_play, actionTitle, togglePendingIntent)
             .build()
     }

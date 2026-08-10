@@ -19,7 +19,7 @@ namespace CityStamina.Avalonia.ViewModels;
 
 public partial class MainViewModel : ViewModelBase
 {
-    public const string AppVersion = "1.2.27";
+    public const string AppVersion = "1.2.28";
     private const string LatestManifestUrl = "https://raw.githubusercontent.com/PHai237/City-Stamina-Spender/main/latest.json";
     private const string StageOneNine = "Stage 1-9";
     private const string StageOneOne = "Stage 1-1";
@@ -81,9 +81,9 @@ public partial class MainViewModel : ViewModelBase
     [ObservableProperty]
     [NotifyPropertyChangedFor(nameof(IsStageOneNineSelected))]
     [NotifyPropertyChangedFor(nameof(IsStageOneOneSelected))]
-    private string _selectedStage = StageOneNine;
+    private string _selectedStage = StageOneOne;
 
-    public IReadOnlyList<string> StageOptions { get; } = [StageOneNine, StageOneOne];
+    public IReadOnlyList<string> StageOptions { get; } = [StageOneOne, StageOneNine];
 
     public bool IsStageOneNineSelected => SelectedStage == StageOneNine;
 

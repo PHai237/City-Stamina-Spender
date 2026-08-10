@@ -2,8 +2,8 @@ const app = document.getElementById("app");
 
 const state = {
   title: "Owner's Selection",
-  selectedStage: "Stage 1-9",
-  stageOptions: ["Stage 1-9", "Stage 1-1"],
+  selectedStage: "Stage 1-1",
+  stageOptions: ["Stage 1-1", "Stage 1-9"],
   targetStamina: "",
   spentSoFar: "--",
   elapsed: "00:00",
@@ -21,8 +21,8 @@ const state = {
   isDetailVisible: false,
   isRunning: false,
   stageDropdownOpen: false,
-  currentVersion: "1.2.27",
-  latestVersion: "1.2.27",
+  currentVersion: "1.2.28",
+  latestVersion: "1.2.28",
   updateState: "checking",
   updateMessage: "Checking for updates...",
   updateProgress: 0,

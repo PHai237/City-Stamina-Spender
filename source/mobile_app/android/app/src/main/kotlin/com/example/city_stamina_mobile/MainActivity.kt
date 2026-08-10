@@ -51,6 +51,15 @@ class MainActivity : FlutterActivity() {
                     startService(Intent(this, ControlService::class.java).setAction(action))
                     result.success(null)
                 }
+                "setControlAmount" -> {
+                    val amount = call.argument<String>("amount") ?: ""
+                    startService(
+                        Intent(this, ControlService::class.java)
+                            .setAction(ControlService.ACTION_SET_AMOUNT)
+                            .putExtra(ControlService.KEY_AMOUNT, amount)
+                    )
+                    result.success(null)
+                }
                 else -> result.notImplemented()
             }
         }
@@ -82,8 +91,9 @@ class MainActivity : FlutterActivity() {
                 if (intent?.action != ControlService.ACTION_TOGGLE_REQUEST) return
                 controlEventSink?.success(
                     mapOf(
-                        "type" to "toggle",
-                        "running" to intent.getBooleanExtra("running", false)
+                        "type" to (intent.getStringExtra("type") ?: "toggle"),
+                        "running" to intent.getBooleanExtra("running", false),
+                        "amount" to (intent.getStringExtra("amount") ?: "")
                     )
                 )
             }

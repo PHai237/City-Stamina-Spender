@@ -1,5 +1,5 @@
 {
-  "version": "1.2.27",
-  "url": "https://github.com/PHai237/City-Stamina-Spender/releases/download/v1.2.27/City.Stamina.Spender.exe",
-  "notes": "Fix desktop run log progress and City Stamina spent tracking between runs."
+  "version": "1.2.28",
+  "url": "https://github.com/PHai237/City-Stamina-Spender/releases/download/v1.2.28/City.Stamina.Spender.exe",
+  "notes": "Default Owner's Selection to stage 1-1 and simplify mobile notification control."
 }

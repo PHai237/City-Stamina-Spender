@@ -133,7 +133,7 @@ public sealed class MainForm : Form
                 _viewModel.SearchQuery = root.GetProperty("value").GetString() ?? "";
                 break;
             case "setStage":
-                _viewModel.SelectedStage = root.GetProperty("value").GetString() ?? "Stage 1-9";
+                _viewModel.SelectedStage = root.GetProperty("value").GetString() ?? "Stage 1-1";
                 break;
             case "setTarget":
                 _viewModel.TargetStamina = root.GetProperty("value").GetString() ?? "";
