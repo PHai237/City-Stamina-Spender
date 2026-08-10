@@ -58,7 +58,7 @@ class AppColors {
 }
 
 class AppInfo {
-  static const version = '1.0.10';
+  static const version = '1.0.11';
   static const androidApkUrl =
       'https://github.com/PHai237/City-Stamina-Spender/releases/latest/download/City.Stamina.Mobile.apk';
 }
@@ -783,9 +783,21 @@ class _OwnerSelectionPageState extends State<OwnerSelectionPage> {
                     ValueListenableBuilder<bool>(
                       valueListenable: _controller.isRunning,
                       builder: (context, running, _) {
-                        return _RunButton(
-                          running: running,
-                          onPressed: () => unawaited(_toggleRun(running)),
+                        return Row(
+                          children: [
+                            Expanded(
+                              child: _RunButton(
+                                running: running,
+                                onPressed: () => _toggleRun(running),
+                              ),
+                            ),
+                            const SizedBox(width: 10),
+                            _CheckButton(
+                              onPressed: running
+                                  ? null
+                                  : () => unawaited(_checkRunPermissions()),
+                            ),
+                          ],
                         );
                       },
                     ),
@@ -825,14 +837,12 @@ class _OwnerSelectionPageState extends State<OwnerSelectionPage> {
     );
   }
 
-  Future<void> _toggleRun(bool running) async {
+  void _toggleRun(bool running) {
     if (running) {
       _controller.stop();
       unawaited(_controlController.setControlRunning(false));
       return;
     }
-
-    if (!await _ensureRunPermissions()) return;
 
     _controller.start(amount: _amountController.text, stage: _stage);
     unawaited(
@@ -840,9 +850,9 @@ class _OwnerSelectionPageState extends State<OwnerSelectionPage> {
     );
   }
 
-  Future<bool> _ensureRunPermissions() async {
+  Future<bool> _checkRunPermissions() async {
     final messenger = ScaffoldMessenger.of(context);
-    _log.info('Run permission check started.');
+    _log.info('Manual permission check started.');
 
     try {
       if (!await _controlController.canPostNotifications()) {
@@ -901,10 +911,13 @@ class _OwnerSelectionPageState extends State<OwnerSelectionPage> {
       );
       await _diagnostics.checkScreenCapturePermission();
 
-      _log.info('Run permission check passed.');
+      _log.info('Manual permission check passed.');
+      messenger.showSnackBar(
+        const SnackBar(content: Text('Permissions are ready.')),
+      );
       return true;
     } catch (error) {
-      _log.error('Run permission check failed: $error');
+      _log.error('Manual permission check failed: $error');
       messenger.showSnackBar(
         SnackBar(
           content: Text('Permission check failed: ${formatUserError(error)}'),
@@ -1333,6 +1346,52 @@ class _RunButton extends StatelessWidget {
                 ),
               ),
             ],
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+class _CheckButton extends StatelessWidget {
+  const _CheckButton({required this.onPressed});
+
+  final VoidCallback? onPressed;
+
+  @override
+  Widget build(BuildContext context) {
+    final disabled = onPressed == null;
+    final fg = disabled ? AppColors.muted : AppColors.blue;
+    return Material(
+      color: disabled ? AppColors.panel : AppColors.surface,
+      borderRadius: BorderRadius.circular(20),
+      child: InkWell(
+        onTap: onPressed,
+        borderRadius: BorderRadius.circular(20),
+        child: Container(
+          width: 104,
+          padding: const EdgeInsets.symmetric(vertical: 16),
+          decoration: BoxDecoration(
+            border: Border.all(color: fg.withValues(alpha: 0.28), width: 1.5),
+            borderRadius: BorderRadius.circular(20),
+          ),
+          child: FittedBox(
+            fit: BoxFit.scaleDown,
+            child: Row(
+              mainAxisAlignment: MainAxisAlignment.center,
+              children: [
+                Icon(Icons.fact_check_rounded, color: fg, size: 18),
+                const SizedBox(width: 7),
+                Text(
+                  'Check',
+                  style: TextStyle(
+                    color: fg,
+                    fontSize: 14,
+                    fontWeight: FontWeight.w800,
+                  ),
+                ),
+              ],
+            ),
           ),
         ),
       ),
