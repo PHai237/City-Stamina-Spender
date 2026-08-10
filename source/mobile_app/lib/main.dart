@@ -58,7 +58,7 @@ class AppColors {
 }
 
 class AppInfo {
-  static const version = '1.0.8';
+  static const version = '1.0.9';
   static const androidApkUrl =
       'https://github.com/PHai237/City-Stamina-Spender/releases/latest/download/City.Stamina.Mobile.apk';
 }
@@ -559,8 +559,8 @@ class _AutomationHubPageState extends State<AutomationHubPage> {
               ),
               const SizedBox(height: 10),
               _ActionRow(
-                icon: Icons.health_and_safety_rounded,
-                title: 'Diagnostics',
+                icon: Icons.send_rounded,
+                title: 'Send log',
                 onTap: () async => _sendDiagnostics(context),
               ),
             ],
@@ -726,6 +726,8 @@ class _OwnerSelectionPageState extends State<OwnerSelectionPage> {
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
+                  _BackToHubButton(onTap: () => Navigator.of(context).pop()),
+                  const SizedBox(height: 16),
                   const _AppHeader(
                     title: "Owner's Selection",
                     subtitle: 'NTE automation',
@@ -789,8 +791,8 @@ class _OwnerSelectionPageState extends State<OwnerSelectionPage> {
                     ),
                     const SizedBox(height: 10),
                     _ActionRow(
-                      icon: Icons.health_and_safety_rounded,
-                      title: 'Diagnostics',
+                      icon: Icons.send_rounded,
+                      title: 'Send log',
                       onTap: () async =>
                           sendMobileDiagnostics(context, _diagnostics),
                     ),
@@ -925,6 +927,53 @@ class _AppHeader extends StatelessWidget {
           ),
         ),
       ],
+    );
+  }
+}
+
+class _BackToHubButton extends StatelessWidget {
+  const _BackToHubButton({required this.onTap});
+
+  final VoidCallback onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    return Align(
+      alignment: Alignment.centerLeft,
+      child: Material(
+        color: AppColors.panel,
+        borderRadius: BorderRadius.circular(16),
+        child: InkWell(
+          onTap: onTap,
+          borderRadius: BorderRadius.circular(16),
+          child: Container(
+            padding: const EdgeInsets.symmetric(horizontal: 13, vertical: 9),
+            decoration: BoxDecoration(
+              border: Border.all(color: AppColors.border),
+              borderRadius: BorderRadius.circular(16),
+            ),
+            child: const Row(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Icon(
+                  Icons.arrow_back_rounded,
+                  color: AppColors.primary,
+                  size: 17,
+                ),
+                SizedBox(width: 7),
+                Text(
+                  'Hub',
+                  style: TextStyle(
+                    color: AppColors.text,
+                    fontSize: 13,
+                    fontWeight: FontWeight.w800,
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ),
+      ),
     );
   }
 }

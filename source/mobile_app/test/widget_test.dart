@@ -22,5 +22,7 @@ void main() {
     expect(find.text('1-1'), findsOneWidget);
     expect(find.text('1-9'), findsOneWidget);
     expect(find.text('Run'), findsOneWidget);
+    expect(find.text('Hub'), findsOneWidget);
+    expect(find.text('Send log'), findsOneWidget);
   });
 }
