@@ -22,8 +22,9 @@
 3. If Android asks, allow installing apps from your browser or file manager.
 4. Open **City Stamina**.
 5. Open **Owner's Selection**.
-6. Pull down the Android notification shade to enter **Amount** and use **Run** or **Stop** while NTE is open.
-7. Tap **Diagnostics** when you need to send device info and a screen capture to Discord.
+6. Press **Run** once so the app can check and request the required permissions.
+7. Pull down the Android notification shade to enter **Amount** and use **Run** or **Stop** while NTE is open.
+8. Tap **Send log** when you need to send device info and a screen capture to Discord.
 
 The Android app is still a mobile foundation build. It has the hub, Owner's
 Selection screen, Run/Stop state, notification control, permission checks,

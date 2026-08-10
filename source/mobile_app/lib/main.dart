@@ -58,7 +58,7 @@ class AppColors {
 }
 
 class AppInfo {
-  static const version = '1.0.9';
+  static const version = '1.0.10';
   static const androidApkUrl =
       'https://github.com/PHai237/City-Stamina-Spender/releases/latest/download/City.Stamina.Mobile.apk';
 }
@@ -206,6 +206,18 @@ class MobileDiagnosticsService {
       'dpi=${capture['densityDpi'] ?? '?'}.',
     );
     return capture;
+  }
+
+  Future<void> checkScreenCapturePermission() async {
+    File? screenshotFile;
+    try {
+      final capture = await captureScreen();
+      final path = (capture['path'] ?? '').toString();
+      if (path.isNotEmpty) screenshotFile = File(path);
+      log.info('Screen capture permission check passed.');
+    } finally {
+      await _deleteIfExists(screenshotFile);
+    }
   }
 
   Future<bool> hasWebhookConfigured() async {
@@ -773,7 +785,7 @@ class _OwnerSelectionPageState extends State<OwnerSelectionPage> {
                       builder: (context, running, _) {
                         return _RunButton(
                           running: running,
-                          onPressed: () => _toggleRun(running),
+                          onPressed: () => unawaited(_toggleRun(running)),
                         );
                       },
                     ),
@@ -813,17 +825,93 @@ class _OwnerSelectionPageState extends State<OwnerSelectionPage> {
     );
   }
 
-  void _toggleRun(bool running) {
+  Future<void> _toggleRun(bool running) async {
     if (running) {
       _controller.stop();
       unawaited(_controlController.setControlRunning(false));
       return;
     }
 
+    if (!await _ensureRunPermissions()) return;
+
     _controller.start(amount: _amountController.text, stage: _stage);
     unawaited(
       _controlController.setControlRunning(_controller.isRunning.value),
     );
+  }
+
+  Future<bool> _ensureRunPermissions() async {
+    final messenger = ScaffoldMessenger.of(context);
+    _log.info('Run permission check started.');
+
+    try {
+      if (!await _controlController.canPostNotifications()) {
+        _log.warn('Notification permission is missing. Requesting permission.');
+        await _controlController.requestNotificationPermission();
+        await _refreshNotificationPermission();
+      } else {
+        _log.info('Notification permission is ready.');
+      }
+
+      final accessibilityReady = await _diagnostics.isAccessibilityEnabled();
+      if (!accessibilityReady) {
+        if (!mounted) return false;
+        final openSettings = await showDialog<bool>(
+          context: context,
+          builder: (context) {
+            return AlertDialog(
+              title: const Text('Accessibility required'),
+              content: const Text(
+                'Android needs this permission before the app can tap or read the active game screen.',
+              ),
+              actions: [
+                TextButton(
+                  onPressed: () => Navigator.of(context).pop(false),
+                  child: const Text('Later'),
+                ),
+                FilledButton(
+                  onPressed: () => Navigator.of(context).pop(true),
+                  child: const Text('Open settings'),
+                ),
+              ],
+            );
+          },
+        );
+
+        if (openSettings == true) {
+          await _diagnostics.openAccessibilitySettings();
+          _log.warn(
+            'Run paused: enable Accessibility, then return and press Run again.',
+          );
+          messenger.showSnackBar(
+            const SnackBar(
+              content: Text(
+                'Enable Accessibility, then return and press Run again.',
+              ),
+            ),
+          );
+        } else {
+          _log.warn('Run canceled: Accessibility permission is missing.');
+        }
+        return false;
+      }
+
+      messenger.showSnackBar(
+        const SnackBar(content: Text('Checking screen capture...')),
+      );
+      await _diagnostics.checkScreenCapturePermission();
+
+      _log.info('Run permission check passed.');
+      return true;
+    } catch (error) {
+      _log.error('Run permission check failed: $error');
+      messenger.showSnackBar(
+        SnackBar(
+          content: Text('Permission check failed: ${formatUserError(error)}'),
+        ),
+      );
+      return false;
+    }
   }
 
   String _formatElapsed(int seconds) {
