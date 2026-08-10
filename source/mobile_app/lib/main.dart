@@ -29,7 +29,7 @@ class CityStaminaMobileApp extends StatelessWidget {
         fontFamily: 'Inter',
         useMaterial3: true,
       ),
-      home: const OwnerSelectionPage(),
+      home: const AutomationHubPage(),
     );
   }
 }
@@ -54,7 +54,7 @@ class AppColors {
 }
 
 class AppInfo {
-  static const version = '1.0.5';
+  static const version = '1.0.6';
   static const androidApkUrl =
       'https://github.com/PHai237/City-Stamina-Spender/releases/latest/download/City.Stamina.Mobile.apk';
 }
@@ -193,6 +193,73 @@ class AndroidControlController {
   Future<void> setControlAmount(String amount) async {
     if (!Platform.isAndroid) return;
     await _channel.invokeMethod<void>('setControlAmount', {'amount': amount});
+  }
+}
+
+class AutomationHubPage extends StatefulWidget {
+  const AutomationHubPage({super.key});
+
+  @override
+  State<AutomationHubPage> createState() => _AutomationHubPageState();
+}
+
+class _AutomationHubPageState extends State<AutomationHubPage> {
+  final _log = MobileLogService.instance;
+
+  @override
+  void initState() {
+    super.initState();
+    unawaited(_log.init());
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Scaffold(
+      body: SafeArea(
+        child: SingleChildScrollView(
+          padding: const EdgeInsets.fromLTRB(20, 18, 20, 22),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              const _AppHeader(
+                title: 'Automation Hub',
+                subtitle: 'Mobile ${AppInfo.version}',
+              ),
+              const SizedBox(height: 18),
+              _HubAutomationCard(
+                title: "Owner's Selection",
+                subtitle: 'NTE - 1-1 / 1-9',
+                status: 'Ready',
+                icon: Icons.local_cafe_rounded,
+                color: AppColors.primary,
+                onTap: () {
+                  Navigator.of(context).push(
+                    MaterialPageRoute(
+                      builder: (_) => const OwnerSelectionPage(),
+                    ),
+                  );
+                },
+              ),
+              const SizedBox(height: 12),
+              _ActionRow(
+                icon: Icons.refresh_rounded,
+                title: 'Update',
+                onTap: () async => _openAndroidDownload(context),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+
+  Future<void> _openAndroidDownload(BuildContext context) async {
+    final messenger = ScaffoldMessenger.of(context);
+    try {
+      await AppUpdateService(_log).openAndroidDownload();
+    } catch (error) {
+      messenger.showSnackBar(SnackBar(content: Text('Update failed: $error')));
+    }
   }
 }
 
@@ -434,6 +501,102 @@ class _AppHeader extends StatelessWidget {
           ),
         ),
       ],
+    );
+  }
+}
+
+class _HubAutomationCard extends StatelessWidget {
+  const _HubAutomationCard({
+    required this.title,
+    required this.subtitle,
+    required this.status,
+    required this.icon,
+    required this.color,
+    required this.onTap,
+  });
+
+  final String title;
+  final String subtitle;
+  final String status;
+  final IconData icon;
+  final Color color;
+  final VoidCallback onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    return Material(
+      color: AppColors.surface,
+      borderRadius: BorderRadius.circular(20),
+      child: InkWell(
+        onTap: onTap,
+        borderRadius: BorderRadius.circular(20),
+        child: Container(
+          padding: const EdgeInsets.all(16),
+          decoration: BoxDecoration(
+            border: Border.all(color: AppColors.border),
+            borderRadius: BorderRadius.circular(20),
+          ),
+          child: Row(
+            children: [
+              Container(
+                width: 42,
+                height: 42,
+                decoration: BoxDecoration(
+                  color: color.withValues(alpha: 0.16),
+                  borderRadius: BorderRadius.circular(13),
+                ),
+                child: Icon(icon, color: color, size: 20),
+              ),
+              const SizedBox(width: 13),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      title,
+                      style: const TextStyle(
+                        color: AppColors.text,
+                        fontSize: 16,
+                        fontWeight: FontWeight.w800,
+                      ),
+                    ),
+                    const SizedBox(height: 3),
+                    Text(
+                      subtitle,
+                      style: const TextStyle(
+                        color: AppColors.muted,
+                        fontSize: 12,
+                        fontWeight: FontWeight.w600,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+              Container(
+                padding: const EdgeInsets.symmetric(horizontal: 9, vertical: 5),
+                decoration: BoxDecoration(
+                  color: AppColors.primaryDim,
+                  borderRadius: BorderRadius.circular(999),
+                ),
+                child: Text(
+                  status,
+                  style: const TextStyle(
+                    color: AppColors.primary,
+                    fontSize: 11,
+                    fontWeight: FontWeight.w800,
+                  ),
+                ),
+              ),
+              const SizedBox(width: 6),
+              const Icon(
+                Icons.chevron_right_rounded,
+                color: AppColors.muted,
+                size: 20,
+              ),
+            ],
+          ),
+        ),
+      ),
     );
   }
 }
