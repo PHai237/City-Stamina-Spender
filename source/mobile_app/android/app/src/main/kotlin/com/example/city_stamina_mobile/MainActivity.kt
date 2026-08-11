@@ -21,6 +21,7 @@ import android.provider.Settings
 import android.text.TextUtils
 import android.util.DisplayMetrics
 import android.view.WindowManager
+import android.net.Uri
 import io.flutter.embedding.android.FlutterActivity
 import io.flutter.embedding.engine.FlutterEngine
 import io.flutter.plugin.common.EventChannel
@@ -69,6 +70,8 @@ class MainActivity : FlutterActivity() {
                     val running = call.argument<Boolean>("running") ?: false
                     val action = if (running) ControlService.ACTION_SET_RUNNING else ControlService.ACTION_SET_IDLE
                     startService(Intent(this, ControlService::class.java).setAction(action))
+                    val floatingAction = if (running) FloatingControlService.ACTION_SET_RUNNING else FloatingControlService.ACTION_SET_IDLE
+                    startService(Intent(this, FloatingControlService::class.java).setAction(floatingAction))
                     result.success(null)
                 }
                 "setControlAmount" -> {
@@ -77,6 +80,11 @@ class MainActivity : FlutterActivity() {
                         Intent(this, ControlService::class.java)
                             .setAction(ControlService.ACTION_SET_AMOUNT)
                             .putExtra(ControlService.KEY_AMOUNT, amount)
+                    )
+                    startService(
+                        Intent(this, FloatingControlService::class.java)
+                            .setAction(FloatingControlService.ACTION_SET_AMOUNT)
+                            .putExtra(FloatingControlService.KEY_AMOUNT, amount)
                     )
                     result.success(null)
                 }
@@ -87,6 +95,38 @@ class MainActivity : FlutterActivity() {
                             .setAction(ControlService.ACTION_SET_STATUS)
                             .putExtra(ControlService.KEY_STATUS, status)
                     )
+                    startService(
+                        Intent(this, FloatingControlService::class.java)
+                            .setAction(FloatingControlService.ACTION_SET_STATUS)
+                            .putExtra(FloatingControlService.KEY_STATUS, status)
+                    )
+                    result.success(null)
+                }
+                "canDrawOverlays" -> {
+                    val granted = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {
+                        Settings.canDrawOverlays(this)
+                    } else {
+                        true
+                    }
+                    result.success(granted)
+                }
+                "openOverlaySettings" -> {
+                    if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {
+                        startActivity(
+                            Intent(
+                                Settings.ACTION_MANAGE_OVERLAY_PERMISSION,
+                                Uri.parse("package:$packageName")
+                            ).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+                        )
+                    }
+                    result.success(null)
+                }
+                "startFloating" -> {
+                    startService(Intent(this, FloatingControlService::class.java).setAction(FloatingControlService.ACTION_SHOW))
+                    result.success(null)
+                }
+                "stopFloating" -> {
+                    startService(Intent(this, FloatingControlService::class.java).setAction(FloatingControlService.ACTION_HIDE))
                     result.success(null)
                 }
                 "getDeviceInfo" -> result.success(getDeviceInfo())

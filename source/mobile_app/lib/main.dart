@@ -58,7 +58,7 @@ class AppColors {
 }
 
 class AppInfo {
-  static const version = '1.0.13';
+  static const version = '1.0.14';
   static const androidApkUrl =
       'https://github.com/PHai237/City-Stamina-Spender/releases/latest/download/City.Stamina.Mobile.apk';
 }
@@ -561,6 +561,32 @@ class AndroidControlController {
     if (!Platform.isAndroid) return;
     await _channel.invokeMethod<void>('setControlStatus', {'status': status});
   }
+
+  Future<bool> canDrawOverlays() async {
+    if (!Platform.isAndroid) return false;
+    return await _channel.invokeMethod<bool>('canDrawOverlays') ?? false;
+  }
+
+  Future<void> openOverlaySettings() async {
+    if (!Platform.isAndroid) return;
+    await _channel.invokeMethod<void>('openOverlaySettings');
+    log.info('Opened floating control permission settings.');
+  }
+
+  Future<void> startFloatingControl() async {
+    if (!Platform.isAndroid) {
+      log.warn('Floating control is Android-only.');
+      return;
+    }
+    await _channel.invokeMethod<void>('startFloating');
+    log.info('Floating control started.');
+  }
+
+  Future<void> stopFloatingControl() async {
+    if (!Platform.isAndroid) return;
+    await _channel.invokeMethod<void>('stopFloating');
+    log.info('Floating control stopped.');
+  }
 }
 
 class AutomationHubPage extends StatefulWidget {
@@ -894,6 +920,12 @@ class _OwnerSelectionPageState extends State<OwnerSelectionPage> {
                     ),
                     const SizedBox(height: 10),
                     _ActionRow(
+                      icon: Icons.picture_in_picture_alt_rounded,
+                      title: 'Floating',
+                      onTap: _openFloatingControl,
+                    ),
+                    const SizedBox(height: 10),
+                    _ActionRow(
                       icon: Icons.send_rounded,
                       title: 'Send log',
                       onTap: () async => sendMobileLog(context, _diagnostics),
@@ -1047,6 +1079,30 @@ class _OwnerSelectionPageState extends State<OwnerSelectionPage> {
 
   Future<void> _openAccessibilitySettings() async {
     await _diagnostics.openAccessibilitySettings();
+  }
+
+  Future<void> _openFloatingControl() async {
+    final messenger = ScaffoldMessenger.of(context);
+    final canDraw = await _controlController.canDrawOverlays();
+    _log.info('Floating permission check: ${canDraw ? 'granted' : 'missing'}.');
+    if (!canDraw) {
+      await _controlController.openOverlaySettings();
+      if (!mounted) return;
+      messenger.showSnackBar(
+        const SnackBar(
+          content: Text('Enable floating permission, then tap Floating again.'),
+        ),
+      );
+      return;
+    }
+
+    await _controlController.setControlAmount(_amountController.text);
+    await _controlController.setControlRunning(_controller.isRunning.value);
+    await _controlController.startFloatingControl();
+    if (!mounted) return;
+    messenger.showSnackBar(
+      const SnackBar(content: Text('Floating control is on.')),
+    );
   }
 
   void _handleControlEvent(Map<String, dynamic> event) {
