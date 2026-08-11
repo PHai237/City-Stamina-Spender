@@ -58,7 +58,7 @@ class AppColors {
 }
 
 class AppInfo {
-  static const version = '1.0.12';
+  static const version = '1.0.13';
   static const androidApkUrl =
       'https://github.com/PHai237/City-Stamina-Spender/releases/latest/download/City.Stamina.Mobile.apk';
 }
@@ -555,6 +555,11 @@ class AndroidControlController {
   Future<void> setControlAmount(String amount) async {
     if (!Platform.isAndroid) return;
     await _channel.invokeMethod<void>('setControlAmount', {'amount': amount});
+  }
+
+  Future<void> setControlStatus(String status) async {
+    if (!Platform.isAndroid) return;
+    await _channel.invokeMethod<void>('setControlStatus', {'status': status});
   }
 }
 
@@ -1056,6 +1061,12 @@ class _OwnerSelectionPageState extends State<OwnerSelectionPage> {
       return;
     }
 
+    if (event['type'] == 'check') {
+      _log.info('Notification control tapped: Check.');
+      unawaited(_checkGameFromNotification());
+      return;
+    }
+
     if (event['type'] != 'toggle') return;
     final shouldRun = event['running'] == true;
     _log.info('Notification control tapped: ${shouldRun ? 'Run' : 'Stop'}.');
@@ -1067,6 +1078,38 @@ class _OwnerSelectionPageState extends State<OwnerSelectionPage> {
     } else {
       _controller.stop();
       unawaited(_controlController.setControlRunning(false));
+    }
+  }
+
+  Future<void> _checkGameFromNotification() async {
+    try {
+      final info = await _diagnostics.getDeviceInfo();
+      final activePackage = (info['activePackage'] ?? '').toString();
+      final accessibilityReady = info['accessibilityEnabled'] == true;
+
+      if (!accessibilityReady) {
+        _log.warn('Notification check: Accessibility is disabled.');
+        await _controlController.setControlStatus('Accessibility missing');
+        return;
+      }
+
+      if (activePackage.isEmpty) {
+        _log.warn('Notification check: active app is unknown.');
+        await _controlController.setControlStatus('Game unknown');
+        return;
+      }
+
+      if (activePackage == 'com.example.city_stamina_mobile') {
+        _log.warn('Notification check: City Stamina app is active, not NTE.');
+        await _controlController.setControlStatus('Open NTE first');
+        return;
+      }
+
+      _log.info('Notification check: active app package=$activePackage.');
+      await _controlController.setControlStatus('Active: $activePackage');
+    } catch (error) {
+      _log.error('Notification check failed: $error');
+      await _controlController.setControlStatus('Check failed');
     }
   }
 }

@@ -80,6 +80,15 @@ class MainActivity : FlutterActivity() {
                     )
                     result.success(null)
                 }
+                "setControlStatus" -> {
+                    val status = call.argument<String>("status") ?: "Ready"
+                    startService(
+                        Intent(this, ControlService::class.java)
+                            .setAction(ControlService.ACTION_SET_STATUS)
+                            .putExtra(ControlService.KEY_STATUS, status)
+                    )
+                    result.success(null)
+                }
                 "getDeviceInfo" -> result.success(getDeviceInfo())
                 "isAccessibilityEnabled" -> result.success(isAutomationAccessibilityEnabled())
                 "openAccessibilitySettings" -> {
