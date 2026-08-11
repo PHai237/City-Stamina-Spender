@@ -58,7 +58,7 @@ class AppColors {
 }
 
 class AppInfo {
-  static const version = '1.0.11';
+  static const version = '1.0.12';
   static const androidApkUrl =
       'https://github.com/PHai237/City-Stamina-Spender/releases/latest/download/City.Stamina.Mobile.apk';
 }
@@ -293,6 +293,50 @@ class MobileDiagnosticsService {
     }
   }
 
+  Future<String> sendLogToDiscord() async {
+    await log.init();
+    log.info('Text log upload started.');
+    final webhookUrl = await _readWebhookUrl();
+    if (webhookUrl == null) {
+      log.warn('Log upload stopped: Discord webhook is not configured.');
+      throw StateError('Discord webhook is not configured.');
+    }
+
+    File? reportFile;
+    try {
+      final deviceInfo = await getDeviceInfo();
+      final accessibilityEnabled = await isAccessibilityEnabled();
+      final fileLogText = await log.readLogText();
+      final tempDir = await getTemporaryDirectory();
+      final stamp = DateTime.now()
+          .toIso8601String()
+          .replaceAll(':', '')
+          .replaceAll('.', '_');
+      reportFile = File(
+        p.join(tempDir.path, 'city-stamina-mobile-log-$stamp.txt'),
+      );
+      await reportFile.writeAsString(
+        _buildReport(
+          deviceInfo: deviceInfo,
+          accessibilityEnabled: accessibilityEnabled,
+          capture: null,
+          fileLogText: fileLogText,
+          title: 'City Stamina Mobile log report',
+          screenCaptureText: 'Not requested by Send log.',
+        ),
+        flush: true,
+      );
+
+      log.info('Uploading text log to Discord.');
+      await _sendFiles(webhookUrl, [reportFile]);
+      log.info('Text log uploaded to Discord.');
+      return 'Log sent.';
+    } finally {
+      await _deleteIfExists(reportFile);
+      log.info('Temporary log file deleted.');
+    }
+  }
+
   Future<String?> _readWebhookUrl() async {
     const envWebhook = String.fromEnvironment('DISCORD_WEBHOOK_URL');
     final normalizedEnvWebhook = _normalizeWebhookUrl(envWebhook);
@@ -350,9 +394,11 @@ class MobileDiagnosticsService {
     required bool accessibilityEnabled,
     required Map<String, dynamic>? capture,
     required String fileLogText,
+    String title = 'City Stamina Mobile diagnostics',
+    String screenCaptureText = 'failed',
   }) {
     final buffer = StringBuffer()
-      ..writeln('City Stamina Mobile diagnostics')
+      ..writeln(title)
       ..writeln('Mobile version: ${AppInfo.version}')
       ..writeln('Created: ${DateTime.now().toIso8601String()}')
       ..writeln(
@@ -366,7 +412,7 @@ class MobileDiagnosticsService {
       ..writeln('==== SCREEN CAPTURE ====')
       ..writeln(
         capture == null
-            ? 'failed'
+            ? screenCaptureText
             : const JsonEncoder.withIndent('  ').convert(capture),
       )
       ..writeln('')
@@ -592,7 +638,7 @@ class _AutomationHubPageState extends State<AutomationHubPage> {
   }
 
   Future<void> _sendDiagnostics(BuildContext context) async {
-    await sendMobileDiagnostics(context, _diagnostics);
+    await sendMobileLog(context, _diagnostics);
   }
 
   Future<void> _ensureNotificationControl() async {
@@ -629,6 +675,34 @@ Future<void> sendMobileDiagnostics(
     diagnostics.log.error('Diagnostics failed: $error');
     messenger.showSnackBar(
       SnackBar(content: Text('Diagnostics failed: ${formatUserError(error)}')),
+    );
+  }
+}
+
+Future<void> sendMobileLog(
+  BuildContext context,
+  MobileDiagnosticsService diagnostics,
+) async {
+  final messenger = ScaffoldMessenger.of(context);
+  try {
+    if (!await diagnostics.hasWebhookConfigured()) {
+      if (!context.mounted) return;
+      final webhookUrl = await askWebhookUrl(context);
+      if (!context.mounted) return;
+      if (webhookUrl == null) {
+        diagnostics.log.warn('Send log canceled: no webhook entered.');
+        return;
+      }
+      await diagnostics.saveWebhookUrl(webhookUrl);
+    }
+
+    messenger.showSnackBar(const SnackBar(content: Text('Sending log...')));
+    final message = await diagnostics.sendLogToDiscord();
+    messenger.showSnackBar(SnackBar(content: Text(message)));
+  } catch (error) {
+    diagnostics.log.error('Send log failed: $error');
+    messenger.showSnackBar(
+      SnackBar(content: Text('Send log failed: ${formatUserError(error)}')),
     );
   }
 }
@@ -817,8 +891,7 @@ class _OwnerSelectionPageState extends State<OwnerSelectionPage> {
                     _ActionRow(
                       icon: Icons.send_rounded,
                       title: 'Send log',
-                      onTap: () async =>
-                          sendMobileDiagnostics(context, _diagnostics),
+                      onTap: () async => sendMobileLog(context, _diagnostics),
                     ),
                     const SizedBox(height: 12),
                     _StatusNote(
