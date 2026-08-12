@@ -1,5 +1,5 @@
 {
-  "version": "1.2.29",
-  "url": "https://github.com/PHai237/City-Stamina-Spender/releases/download/v1.2.29/City.Stamina.Spender.exe",
-  "notes": "Keep mobile hub, default Owner's Selection to stage 1-1, and separate PC/mobile versions."
+  "version": "1.2.30",
+  "url": "https://github.com/PHai237/City-Stamina-Spender/releases/download/v1.2.30/City.Stamina.Spender.exe",
+  "notes": "Verify Open Shop before running automation, add safer Stage 1-1 order confirmation, and polish mobile floating control."
 }
