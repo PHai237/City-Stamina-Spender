@@ -37,6 +37,9 @@ ITEM_RECIPES = {
 }
 
 ORDER_CONFIRMATION_SCANS = 1
+AMBIGUOUS_ORDER_CONFIRMATION_SCANS = 2
+HIGH_CONFIDENCE_ORDER_SCORE = 0.90
+AMBIGUOUS_CONFIRM_DELAY = 0.07
 READY_OVERLAY_SECONDS = 5.2
 TOMATO_JUICE_ITEM_ID = 6
 
@@ -79,6 +82,12 @@ def same_visible_order(previous: ItemMatch | None, current: ItemMatch) -> bool:
         abs(previous_center[0] - current_center[0]) <= tolerance_x
         and abs(previous_center[1] - current_center[1]) <= tolerance_y
     )
+
+
+def required_confirmation_scans(match: ItemMatch) -> int:
+    if match.score >= HIGH_CONFIDENCE_ORDER_SCORE:
+        return ORDER_CONFIRMATION_SCANS
+    return AMBIGUOUS_ORDER_CONFIRMATION_SCANS
 
 
 def read_revenue(target: dict) -> int | None:
@@ -342,12 +351,13 @@ def run_stage_1_1(
             pending_match = match
             pending_count = 1
 
-        if pending_count < ORDER_CONFIRMATION_SCANS:
+        required_confirmations = required_confirmation_scans(match)
+        if pending_count < required_confirmations:
             runner_log(
                 f"ORDER_CONFIRMING item={item_id} score={match.score:.3f} "
-                f"scale={match.scale:.3f} count={pending_count}/{ORDER_CONFIRMATION_SCANS}"
+                f"scale={match.scale:.3f} count={pending_count}/{required_confirmations}"
             )
-            time.sleep(max(0.08, interval))
+            time.sleep(max(AMBIGUOUS_CONFIRM_DELAY, min(interval, 0.10)))
             continue
 
         recipe = ITEM_RECIPES.get(item_id)

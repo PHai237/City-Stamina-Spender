@@ -1061,19 +1061,91 @@ def open_support_employee_page_only(target: dict) -> bool:
     return False
 
 
-def open_shop_and_monitor(target: dict, args: argparse.Namespace) -> int:
-    visual_button = find_bottom_action_button(target["client"])
+def gameplay_visible_after_open_shop(target: dict, args: argparse.Namespace) -> bool:
+    refreshed = find_nte_window()
+    if not refreshed:
+        return False
+    target.update(refreshed)
+
+    if args.stage == "1-9":
+        try:
+            from monitor import is_stage_1_9_gameplay
+
+            if is_stage_1_9_gameplay(target["client"]):
+                log("Open Shop verified by stage 1-9 gameplay title")
+                return True
+        except Exception as exc:
+            log(f"Stage 1-9 gameplay verification skipped: {exc}")
+
+    owner_template = cv2.imread(
+        str(WORKSPACE / "loop_assets/owners_selection_title.png"), cv2.IMREAD_GRAYSCALE
+    )
+    if owner_template is None:
+        log("Open Shop transition could not load Owner's Selection template")
+        return False
+    if not is_owner_selection_screen(target["client"], owner_template):
+        log("Open Shop verified because Owner's Selection title disappeared")
+        return True
+
+    return False
+
+
+def wait_for_open_shop_transition(
+    target: dict,
+    args: argparse.Namespace,
+    timeout: float = 3.5,
+    required_hits: int = 2,
+) -> bool:
+    deadline = time.monotonic() + timeout
+    hits = 0
+    while time.monotonic() < deadline:
+        if gameplay_visible_after_open_shop(target, args):
+            hits += 1
+            if hits >= required_hits:
+                return True
+        else:
+            hits = 0
+        human_sleep(0.18, 0.35, 0.06)
+    log("Open Shop transition verification timed out")
+    return False
+
+
+def click_open_shop_and_verify(target: dict, args: argparse.Namespace) -> bool:
+    for attempt in range(1, 3):
+        refreshed = find_nte_window() or target
+        target.update(refreshed)
+        shop_x, shop_y, method = open_shop_click_point(target["client"])
+        log(
+            f"Click Open Shop attempt={attempt} method={method} "
+            f"point=({shop_x},{shop_y})"
+        )
+        fast_click(target["hwnd"], shop_x, shop_y, focus_delay=0.0)
+        print(f"Da xac minh giao dien {args.stage}. Dang bam Open Shop...")
+        if wait_for_open_shop_transition(target, args):
+            print("Da bam Open Shop.")
+            return True
+        print("Chua xac minh duoc Open Shop, dang thu lai...")
+
+    debug_dir = WORKSPACE / "stage_1_9_debug" / "open_shop_failed"
+    debug_dir.mkdir(parents=True, exist_ok=True)
+    full, _ = capture_client_band_color(target["client"], 0.0, 0.0, 1.0, 1.0)
+    cv2.imwrite(str(debug_dir / "latest_full.png"), full)
+    print("Khong xac minh duoc Open Shop sau khi bam. Da dung de tranh bam sai.")
+    return False
+
+
+def open_shop_click_point(client: dict[str, int]) -> tuple[int, int, str]:
+    visual_button = find_bottom_action_button(client)
     if visual_button is not None:
         shop_x, shop_y, _ = visual_button
-        log(f"Click Open Shop visual point=({shop_x},{shop_y})")
-    else:
-        shop_rel_x, shop_rel_y = scale_point(target["client"], OPEN_SHOP_POINT, "right")
-        shop_x = target["client"]["left"] + shop_rel_x
-        shop_y = target["client"]["top"] + shop_rel_y
-        log(f"Click Open Shop fallback point=({shop_x},{shop_y})")
-    fast_click(target["hwnd"], shop_x, shop_y, focus_delay=0.0)
-    print(f"Da xac minh giao dien {args.stage}. Dang bam Open Shop...")
-    print("Da bam Open Shop.")
+        return shop_x, shop_y, "visual"
+    shop_rel_x, shop_rel_y = scale_point(client, OPEN_SHOP_POINT, "right")
+    return client["left"] + shop_rel_x, client["top"] + shop_rel_y, "fallback"
+
+
+def open_shop_and_monitor(target: dict, args: argparse.Namespace) -> int:
+    if not click_open_shop_and_verify(target, args):
+        return 8
     if args.stage == "1-1":
         if args.stage_1_1_calibrate_run:
             print("Dang calibrate vung order stage 1-1...")

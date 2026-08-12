@@ -165,9 +165,9 @@ class FloatingControlService : Service() {
             })
         }
         bubble.addView(TextView(this).apply {
-            text = "S"
+            text = if (isRunning) "ON" else "S"
             gravity = Gravity.CENTER
-            textSize = 15f
+            textSize = if (isRunning) 12f else 15f
             typeface = Typeface.DEFAULT_BOLD
             setTextColor(if (isRunning) mint else sub)
             background = oval(if (isRunning) mintDim else Color.argb(10, 255, 255, 255), if (isRunning) mintBorder else border)
@@ -412,7 +412,7 @@ class FloatingControlService : Service() {
                 MotionEvent.ACTION_MOVE -> {
                     val dx = (event.rawX - touchX).toInt()
                     val dy = (event.rawY - touchY).toInt()
-                    if (abs(dx) + abs(dy) < dp(8)) return false
+                    if (abs(dx) + abs(dy) < dp(8)) return true
                     currentParams.x = startX + dx
                     currentParams.y = (startY + dy).coerceAtLeast(dp(8))
                     windowManager?.updateViewLayout(view, currentParams)
