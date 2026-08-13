@@ -58,7 +58,7 @@ class AppColors {
 }
 
 class AppInfo {
-  static const version = '1.0.22';
+  static const version = '1.0.23';
   static const androidApkUrl =
       'https://github.com/PHai237/City-Stamina-Spender/releases/latest/download/City.Stamina.Mobile.apk';
 }
@@ -590,10 +590,7 @@ class AndroidControlController {
 
   Future<bool> tapScreen(double x, double y) async {
     if (!Platform.isAndroid) return false;
-    return await _channel.invokeMethod<bool>('tapScreen', {
-          'x': x,
-          'y': y,
-        }) ??
+    return await _channel.invokeMethod<bool>('tapScreen', {'x': x, 'y': y}) ??
         false;
   }
 }
@@ -1154,28 +1151,39 @@ class _OwnerSelectionPageState extends State<OwnerSelectionPage> {
 
       if (!accessibilityReady) {
         _log.warn('Notification check: Accessibility is disabled.');
-        await _controlController.setControlStatus('Accessibility missing');
+        await _controlController.setControlStatus('Enable Access');
         return;
       }
 
       if (activePackage.isEmpty) {
         _log.warn('Notification check: active app is unknown.');
-        await _controlController.setControlStatus('Game unknown');
+        await _controlController.setControlStatus('No app');
         return;
       }
 
       if (activePackage == 'com.example.city_stamina_mobile') {
         _log.warn('Notification check: City Stamina app is active, not NTE.');
-        await _controlController.setControlStatus('Open NTE first');
+        await _controlController.setControlStatus('Open NTE');
         return;
       }
 
       _log.info('Notification check: active app package=$activePackage.');
-      await _controlController.setControlStatus('Active: $activePackage');
+      await _controlController.setControlStatus(
+        _looksLikeGamePackage(activePackage)
+            ? 'NTE ready'
+            : 'App: $activePackage',
+      );
     } catch (error) {
       _log.error('Notification check failed: $error');
       await _controlController.setControlStatus('Check failed');
     }
+  }
+
+  bool _looksLikeGamePackage(String packageName) {
+    final normalized = packageName.toLowerCase();
+    return normalized.contains('nte') ||
+        normalized.contains('nevernes') ||
+        normalized.contains('netease');
   }
 }
 

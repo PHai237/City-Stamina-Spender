@@ -111,7 +111,9 @@ class FloatingControlService : Service() {
             WindowManager.LayoutParams.WRAP_CONTENT,
             WindowManager.LayoutParams.WRAP_CONTENT,
             type,
-            WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE or WindowManager.LayoutParams.FLAG_NOT_TOUCH_MODAL,
+            WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE or
+                WindowManager.LayoutParams.FLAG_NOT_TOUCH_MODAL or
+                WindowManager.LayoutParams.FLAG_WATCH_OUTSIDE_TOUCH,
             PixelFormat.TRANSLUCENT
         ).apply {
             gravity = Gravity.TOP or Gravity.START
@@ -124,6 +126,14 @@ class FloatingControlService : Service() {
         rootView = LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
             gravity = Gravity.CENTER
+            setOnTouchListener { _, event ->
+                if (event.action == MotionEvent.ACTION_OUTSIDE && expanded) {
+                    collapseToEdge()
+                    true
+                } else {
+                    false
+                }
+            }
         }
         windowManager?.addView(rootView, params)
         render()
@@ -362,11 +372,11 @@ class FloatingControlService : Service() {
     private fun checkActiveAppFromFloating() {
         val activePackage = AutomationAccessibilityService.bestForegroundPackage(packageName)
         status = when {
-            !AutomationAccessibilityService.isConnected -> "Accessibility missing"
-            activePackage.isBlank() -> "Game unknown"
-            activePackage == packageName -> "Open NTE first"
-            looksLikeGamePackage(activePackage) -> "NTE active"
-            else -> "Active: $activePackage"
+            !AutomationAccessibilityService.isConnected -> "Enable Access"
+            activePackage.isBlank() -> "No app"
+            activePackage == packageName -> "Open NTE"
+            looksLikeGamePackage(activePackage) -> "NTE ready"
+            else -> "App: $activePackage"
         }
         updateUi()
         startService(
