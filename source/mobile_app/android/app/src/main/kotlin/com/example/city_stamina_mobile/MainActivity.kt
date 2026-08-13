@@ -131,6 +131,20 @@ class MainActivity : FlutterActivity() {
                 }
                 "getDeviceInfo" -> result.success(getDeviceInfo())
                 "isAccessibilityEnabled" -> result.success(isAutomationAccessibilityEnabled())
+                "tapScreen" -> {
+                    val x = call.argument<Number>("x")?.toFloat()
+                    val y = call.argument<Number>("y")?.toFloat()
+                    if (x == null || y == null) {
+                        result.error("BAD_ARGUMENTS", "tapScreen requires x and y.", null)
+                        return@setMethodCallHandler
+                    }
+                    val tapped = AutomationAccessibilityService.tap(x, y)
+                    if (tapped) {
+                        result.success(true)
+                    } else {
+                        result.error("ACCESSIBILITY_NOT_READY", "Accessibility service is not ready.", null)
+                    }
+                }
                 "openAccessibilitySettings" -> {
                     startActivity(Intent(Settings.ACTION_ACCESSIBILITY_SETTINGS).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK))
                     result.success(null)
@@ -331,7 +345,7 @@ class MainActivity : FlutterActivity() {
             "screenWidth" to metrics.widthPixels,
             "screenHeight" to metrics.heightPixels,
             "densityDpi" to metrics.densityDpi,
-            "accessibilityEnabled" to isAutomationAccessibilityEnabled(),
+            "accessibilityEnabled" to (isAutomationAccessibilityEnabled() && AutomationAccessibilityService.isConnected),
             "activePackage" to AutomationAccessibilityService.lastPackageName
         )
     }

@@ -111,7 +111,7 @@ class FloatingControlService : Service() {
             WindowManager.LayoutParams.WRAP_CONTENT,
             WindowManager.LayoutParams.WRAP_CONTENT,
             type,
-            WindowManager.LayoutParams.FLAG_NOT_TOUCH_MODAL,
+            WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE or WindowManager.LayoutParams.FLAG_NOT_TOUCH_MODAL,
             PixelFormat.TRANSLUCENT
         ).apply {
             gravity = Gravity.TOP or Gravity.START
@@ -150,6 +150,7 @@ class FloatingControlService : Service() {
         } else {
             renderBubble(root)
         }
+        resizeFloatingWindow()
         updateUi()
     }
 
@@ -291,6 +292,7 @@ class FloatingControlService : Service() {
             background = rounded(Color.argb(10, 255, 255, 255), dp(12), border)
             setOnClickListener {
                 syncAmountFromInput()
+                checkActiveAppFromFloating()
                 sendBroadcast(
                     Intent(ControlService.ACTION_TOGGLE_REQUEST)
                         .putExtra("type", "check")
@@ -346,6 +348,39 @@ class FloatingControlService : Service() {
             background = rounded(if (isRunning) coralDim else mintDim, dp(12), if (isRunning) coralBorder else mintBorder)
         }
         statusText?.text = status
+    }
+
+    private fun resizeFloatingWindow() {
+        val currentParams = params ?: return
+        currentParams.width = if (expanded) dp(220) else dp(54)
+        currentParams.height = WindowManager.LayoutParams.WRAP_CONTENT
+        if (!expanded) currentParams.height = dp(54)
+        clampPosition(currentParams)
+        updateFloatingLayout()
+    }
+
+    private fun checkActiveAppFromFloating() {
+        val activePackage = AutomationAccessibilityService.lastPackageName
+        status = when {
+            !AutomationAccessibilityService.isConnected -> "Accessibility missing"
+            activePackage.isBlank() -> "Game unknown"
+            activePackage == packageName -> "Open NTE first"
+            looksLikeGamePackage(activePackage) -> "NTE active"
+            else -> "Active: $activePackage"
+        }
+        updateUi()
+        startService(
+            Intent(this, ControlService::class.java)
+                .setAction(ControlService.ACTION_SET_STATUS)
+                .putExtra(ControlService.KEY_STATUS, status)
+        )
+    }
+
+    private fun looksLikeGamePackage(packageName: String): Boolean {
+        val normalized = packageName.lowercase()
+        return normalized.contains("nte") ||
+            normalized.contains("nevernes") ||
+            normalized.contains("netease")
     }
 
     private fun collapseToEdge() {

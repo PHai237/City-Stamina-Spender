@@ -58,7 +58,7 @@ class AppColors {
 }
 
 class AppInfo {
-  static const version = '1.0.20';
+  static const version = '1.0.21';
   static const androidApkUrl =
       'https://github.com/PHai237/City-Stamina-Spender/releases/latest/download/City.Stamina.Mobile.apk';
 }
@@ -586,6 +586,15 @@ class AndroidControlController {
     if (!Platform.isAndroid) return;
     await _channel.invokeMethod<void>('stopFloating');
     log.info('Floating control stopped.');
+  }
+
+  Future<bool> tapScreen(double x, double y) async {
+    if (!Platform.isAndroid) return false;
+    return await _channel.invokeMethod<bool>('tapScreen', {
+          'x': x,
+          'y': y,
+        }) ??
+        false;
   }
 }
 
