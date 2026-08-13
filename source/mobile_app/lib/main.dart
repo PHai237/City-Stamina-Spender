@@ -1,10 +1,12 @@
 import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
+import 'dart:math';
 
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:http/http.dart' as http;
+import 'package:image/image.dart' as img;
 import 'package:path/path.dart' as p;
 import 'package:path_provider/path_provider.dart';
 import 'package:url_launcher/url_launcher.dart';
@@ -58,7 +60,7 @@ class AppColors {
 }
 
 class AppInfo {
-  static const version = '1.0.23';
+  static const version = '1.0.24';
   static const androidApkUrl =
       'https://github.com/PHai237/City-Stamina-Spender/releases/latest/download/City.Stamina.Mobile.apk';
 }
@@ -463,32 +465,261 @@ class MobileDiagnosticsService {
   }
 }
 
-class OwnerAutomationController {
-  OwnerAutomationController(this.log);
+class StageCheckResult {
+  const StageCheckResult({
+    required this.matched,
+    required this.score,
+    required this.threshold,
+    this.x,
+    this.y,
+  });
+
+  final bool matched;
+  final double score;
+  final double threshold;
+  final int? x;
+  final int? y;
+}
+
+class MobileStageDetector {
+  MobileStageDetector(this.log);
+
+  static const _stageOneOneTitleAsset =
+      'assets/stage_1_1/stage_1_1_selected_title_strict.png';
+  static const _threshold = 0.62;
 
   final MobileLogService log;
+
+  Future<StageCheckResult> detectSelectedStageOneOne(
+    File screenshotFile,
+  ) async {
+    final screenshotBytes = await screenshotFile.readAsBytes();
+    final screenshot = img.decodeImage(screenshotBytes);
+    if (screenshot == null) {
+      throw StateError('Could not decode screenshot.');
+    }
+
+    final templateBytes = await rootBundle.load(_stageOneOneTitleAsset);
+    final template = img.decodeImage(templateBytes.buffer.asUint8List());
+    if (template == null) {
+      throw StateError('Could not decode stage template.');
+    }
+
+    final titleRegion = _cropTitleRegion(screenshot);
+    final normalizedTitle = img.grayscale(
+      img.copyResize(
+        titleRegion,
+        width: 760,
+        height: 80,
+        interpolation: img.Interpolation.average,
+      ),
+    );
+    final normalizedTemplate = img.grayscale(template);
+    final match = _bestMatch(normalizedTitle, normalizedTemplate);
+    log.info(
+      'Stage 1-1 title score=${match.score.toStringAsFixed(3)} '
+      'at x=${match.x} y=${match.y}.',
+    );
+    return StageCheckResult(
+      matched: match.score >= _threshold,
+      score: match.score,
+      threshold: _threshold,
+      x: match.x,
+      y: match.y,
+    );
+  }
+
+  img.Image _cropTitleRegion(img.Image image) {
+    final width = image.width;
+    final height = image.height;
+    final left = (width * 245 / 1280).round().clamp(0, width - 1);
+    final top = (height * 80 / 720).round().clamp(0, height - 1);
+    final right = (width * 1005 / 1280).round().clamp(left + 1, width);
+    final bottom = (height * 160 / 720).round().clamp(top + 1, height);
+    return img.copyCrop(
+      image,
+      x: left,
+      y: top,
+      width: right - left,
+      height: bottom - top,
+    );
+  }
+
+  _TemplateMatch _bestMatch(img.Image image, img.Image template) {
+    if (template.width > image.width || template.height > image.height) {
+      return const _TemplateMatch(score: -1, x: 0, y: 0);
+    }
+
+    final templateValues = _grayValues(template);
+    final templateMean =
+        templateValues.reduce((a, b) => a + b) / templateValues.length;
+    var templateVariance = 0.0;
+    final centeredTemplate = List<double>.filled(templateValues.length, 0);
+    for (var i = 0; i < templateValues.length; i += 1) {
+      final centered = templateValues[i] - templateMean;
+      centeredTemplate[i] = centered;
+      templateVariance += centered * centered;
+    }
+    final templateStd = templateVariance == 0 ? 1.0 : templateVariance;
+
+    var best = const _TemplateMatch(score: -1, x: 0, y: 0);
+    final maxX = image.width - template.width;
+    final maxY = image.height - template.height;
+    for (var y = 0; y <= maxY; y += 1) {
+      for (var x = 0; x <= maxX; x += 1) {
+        final score = _scoreAt(
+          image,
+          template.width,
+          template.height,
+          centeredTemplate,
+          templateMean,
+          templateStd,
+          x,
+          y,
+        );
+        if (score > best.score) {
+          best = _TemplateMatch(score: score, x: x, y: y);
+        }
+      }
+    }
+    return best;
+  }
+
+  List<double> _grayValues(img.Image image) {
+    final values = List<double>.filled(image.width * image.height, 0);
+    var index = 0;
+    for (var y = 0; y < image.height; y += 1) {
+      for (var x = 0; x < image.width; x += 1) {
+        values[index] = image.getPixel(x, y).r.toDouble();
+        index += 1;
+      }
+    }
+    return values;
+  }
+
+  double _scoreAt(
+    img.Image image,
+    int templateWidth,
+    int templateHeight,
+    List<double> centeredTemplate,
+    double templateMean,
+    double templateStd,
+    int startX,
+    int startY,
+  ) {
+    var patchSum = 0.0;
+    for (var y = 0; y < templateHeight; y += 1) {
+      for (var x = 0; x < templateWidth; x += 1) {
+        patchSum += image.getPixel(startX + x, startY + y).r.toDouble();
+      }
+    }
+    final patchMean = patchSum / centeredTemplate.length;
+    var numerator = 0.0;
+    var patchVariance = 0.0;
+    var index = 0;
+    for (var y = 0; y < templateHeight; y += 1) {
+      for (var x = 0; x < templateWidth; x += 1) {
+        final patch = image.getPixel(startX + x, startY + y).r.toDouble();
+        final centeredPatch = patch - patchMean;
+        numerator += centeredPatch * centeredTemplate[index];
+        patchVariance += centeredPatch * centeredPatch;
+        index += 1;
+      }
+    }
+    if (patchVariance == 0) return -1;
+    return numerator / sqrt(patchVariance * templateStd);
+  }
+}
+
+class _TemplateMatch {
+  const _TemplateMatch({required this.score, required this.x, required this.y});
+
+  final double score;
+  final int x;
+  final int y;
+}
+
+class OwnerAutomationController {
+  OwnerAutomationController(this.log, this.diagnostics, this.control);
+
+  final MobileLogService log;
+  final MobileDiagnosticsService diagnostics;
+  final AndroidControlController control;
   final ValueNotifier<bool> isRunning = ValueNotifier(false);
   final ValueNotifier<int> elapsedSeconds = ValueNotifier(0);
   Timer? _timer;
 
-  void start({required String amount, required String stage}) {
+  Future<void> start({required String amount, required String stage}) async {
     if (isRunning.value) return;
     final parsed = int.tryParse(amount.trim());
     if (parsed == null || parsed <= 0) {
       log.warn('Enter a valid City Stamina amount.');
+      await control.setControlStatus('Bad amount');
       return;
     }
 
+    log.info('Run started. stage=$stage target=$parsed');
+    await control.setControlStatus('Checking $stage');
+
+    if (stage != '1-1') {
+      log.warn('Mobile runner currently supports the 1-1 screen check only.');
+      await control.setControlStatus('1-1 only');
+      return;
+    }
+
+    final StageCheckResult stageCheck;
+    try {
+      stageCheck = await _verifyStageOneOne();
+    } catch (error) {
+      log.error('Stage 1-1 check failed: $error');
+      await control.setControlStatus('Check failed');
+      return;
+    }
+    if (!stageCheck.matched) {
+      log.warn(
+        'Stage 1-1 check failed. score=${stageCheck.score.toStringAsFixed(3)} '
+        'threshold=${stageCheck.threshold.toStringAsFixed(3)}',
+      );
+      await control.setControlStatus('Find 1-1');
+      return;
+    }
+
+    log.info(
+      'Stage 1-1 verified. score=${stageCheck.score.toStringAsFixed(3)} '
+      'at x=${stageCheck.x} y=${stageCheck.y}',
+    );
+    await control.setControlStatus('1-1 ready');
+
     elapsedSeconds.value = 0;
     isRunning.value = true;
-    log.info('Run started. stage=$stage target=$parsed');
-    log.info('Mobile automation runner is not wired yet.');
+    log.info('Mobile automation runner paused after stage verification.');
     _timer = Timer.periodic(const Duration(seconds: 1), (_) {
       elapsedSeconds.value += 1;
       if (elapsedSeconds.value % 10 == 0) {
         log.info('Still running. elapsed=${elapsedSeconds.value}s');
       }
     });
+  }
+
+  Future<StageCheckResult> _verifyStageOneOne() async {
+    File? screenshotFile;
+    try {
+      final capture = await diagnostics.captureScreen();
+      final path = (capture['path'] ?? '').toString();
+      if (path.isEmpty) {
+        throw StateError('Screen capture returned no file path.');
+      }
+      screenshotFile = File(path);
+      return MobileStageDetector(log).detectSelectedStageOneOne(screenshotFile);
+    } finally {
+      try {
+        if (screenshotFile != null && await screenshotFile.exists()) {
+          await screenshotFile.delete();
+        }
+      } catch (_) {
+        // Run cleanup should not hide the stage-check result.
+      }
+    }
   }
 
   void stop() {
@@ -811,9 +1042,13 @@ class _OwnerSelectionPageState extends State<OwnerSelectionPage> {
   @override
   void initState() {
     super.initState();
-    _controller = OwnerAutomationController(_log);
     _controlController = AndroidControlController(_log);
     _diagnostics = MobileDiagnosticsService(_log);
+    _controller = OwnerAutomationController(
+      _log,
+      _diagnostics,
+      _controlController,
+    );
     _amountController.addListener(() {
       unawaited(_controlController.setControlAmount(_amountController.text));
     });
@@ -960,10 +1195,12 @@ class _OwnerSelectionPageState extends State<OwnerSelectionPage> {
       return;
     }
 
-    _controller.start(amount: _amountController.text, stage: _stage);
-    unawaited(
-      _controlController.setControlRunning(_controller.isRunning.value),
-    );
+    unawaited(_startOwnerAutomation());
+  }
+
+  Future<void> _startOwnerAutomation() async {
+    await _controller.start(amount: _amountController.text, stage: _stage);
+    await _controlController.setControlRunning(_controller.isRunning.value);
   }
 
   Future<bool> _checkRunPermissions() async {
@@ -1133,9 +1370,14 @@ class _OwnerSelectionPageState extends State<OwnerSelectionPage> {
     final shouldRun = event['running'] == true;
     _log.info('Notification control tapped: ${shouldRun ? 'Run' : 'Stop'}.');
     if (shouldRun) {
-      _controller.start(amount: _amountController.text, stage: _stage);
       unawaited(
-        _controlController.setControlRunning(_controller.isRunning.value),
+        _controller
+            .start(amount: _amountController.text, stage: _stage)
+            .then(
+              (_) => _controlController.setControlRunning(
+                _controller.isRunning.value,
+              ),
+            ),
       );
     } else {
       _controller.stop();
