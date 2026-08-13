@@ -1,8 +1,10 @@
 package com.example.city_stamina_mobile
 
 import android.app.Service
+import android.content.Context
 import android.content.Intent
 import android.graphics.Color
+import android.graphics.Point
 import android.graphics.PixelFormat
 import android.graphics.Typeface
 import android.graphics.drawable.GradientDrawable
@@ -13,6 +15,7 @@ import android.view.Gravity
 import android.view.MotionEvent
 import android.view.View
 import android.view.WindowManager
+import android.view.inputmethod.InputMethodManager
 import android.widget.Button
 import android.widget.EditText
 import android.widget.FrameLayout
@@ -111,12 +114,11 @@ class FloatingControlService : Service() {
             WindowManager.LayoutParams.WRAP_CONTENT,
             WindowManager.LayoutParams.WRAP_CONTENT,
             type,
-            WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE or
-                WindowManager.LayoutParams.FLAG_NOT_TOUCH_MODAL or
-                WindowManager.LayoutParams.FLAG_WATCH_OUTSIDE_TOUCH,
+            floatingFlags(),
             PixelFormat.TRANSLUCENT
         ).apply {
             gravity = Gravity.TOP or Gravity.START
+            softInputMode = WindowManager.LayoutParams.SOFT_INPUT_ADJUST_NOTHING
             val saved = loadPosition()
             x = saved?.first ?: dp(14)
             y = saved?.second ?: dp(120)
@@ -260,6 +262,13 @@ class FloatingControlService : Service() {
             setText(amount)
             setPadding(dp(12), 0, dp(12), 0)
             background = rounded(inputBg, dp(12), border)
+            setOnClickListener {
+                requestFocus()
+                showKeyboard(this)
+            }
+            setOnFocusChangeListener { view, hasFocus ->
+                if (hasFocus) showKeyboard(view)
+            }
         }
         body.addView(TextView(this).apply {
             text = "STAMINA AMOUNT"
@@ -294,8 +303,8 @@ class FloatingControlService : Service() {
                 updateUi()
             }
         }
-        val checkButton = Button(this).apply {
-            text = "Check"
+        val gameButton = Button(this).apply {
+            text = "Game"
             textSize = 14f
             typeface = Typeface.DEFAULT_BOLD
             setTextColor(sub)
@@ -305,14 +314,40 @@ class FloatingControlService : Service() {
                 checkActiveAppFromFloating()
                 sendBroadcast(
                     Intent(ControlService.ACTION_TOGGLE_REQUEST)
-                        .putExtra("type", "check")
+                        .putExtra("type", "game_check")
+                        .putExtra("amount", amount)
+                )
+            }
+        }
+        val stageButton = Button(this).apply {
+            text = "Stage"
+            textSize = 14f
+            typeface = Typeface.DEFAULT_BOLD
+            setTextColor(sub)
+            background = rounded(Color.argb(10, 255, 255, 255), dp(12), border)
+            setOnClickListener {
+                syncAmountFromInput()
+                status = "Checking 1-1"
+                updateUi()
+                startService(
+                    Intent(this@FloatingControlService, ControlService::class.java)
+                        .setAction(ControlService.ACTION_SET_STATUS)
+                        .putExtra(ControlService.KEY_STATUS, status)
+                )
+                sendBroadcast(
+                    Intent(ControlService.ACTION_TOGGLE_REQUEST)
+                        .putExtra("type", "stage_check")
+                        .putExtra("stage", "1-1")
                         .putExtra("amount", amount)
                 )
             }
         }
         actions.addView(runButton, LinearLayout.LayoutParams(0, dp(46), 1f))
-        actions.addView(checkButton, LinearLayout.LayoutParams(0, dp(46), 1f).apply {
-            leftMargin = dp(10)
+        actions.addView(gameButton, LinearLayout.LayoutParams(0, dp(46), 1f).apply {
+            leftMargin = dp(8)
+        })
+        actions.addView(stageButton, LinearLayout.LayoutParams(0, dp(46), 1f).apply {
+            leftMargin = dp(8)
         })
         body.addView(actions, LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, LinearLayout.LayoutParams.WRAP_CONTENT).apply {
             topMargin = dp(10)
@@ -362,7 +397,9 @@ class FloatingControlService : Service() {
 
     private fun resizeFloatingWindow() {
         val currentParams = params ?: return
-        currentParams.width = if (expanded) dp(220) else dp(54)
+        currentParams.flags = floatingFlags()
+        currentParams.softInputMode = WindowManager.LayoutParams.SOFT_INPUT_ADJUST_NOTHING
+        currentParams.width = if (expanded) dp(252) else dp(54)
         currentParams.height = WindowManager.LayoutParams.WRAP_CONTENT
         if (!expanded) currentParams.height = dp(54)
         clampPosition(currentParams)
@@ -397,7 +434,7 @@ class FloatingControlService : Service() {
         expanded = false
         val currentParams = params
         if (currentParams != null) {
-            val screenWidth = resources.displayMetrics.widthPixels
+            val (screenWidth, _) = screenSize()
             currentParams.x = if (currentParams.x > screenWidth / 2) {
                 screenWidth - dp(72)
             } else {
@@ -416,6 +453,23 @@ class FloatingControlService : Service() {
         windowManager?.updateViewLayout(view, currentParams)
     }
 
+    private fun floatingFlags(): Int {
+        val base = WindowManager.LayoutParams.FLAG_NOT_TOUCH_MODAL or
+            WindowManager.LayoutParams.FLAG_WATCH_OUTSIDE_TOUCH
+        return if (expanded) {
+            base
+        } else {
+            base or WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE
+        }
+    }
+
+    private fun showKeyboard(view: View) {
+        view.post {
+            val inputManager = getSystemService(Context.INPUT_METHOD_SERVICE) as InputMethodManager
+            inputManager.showSoftInput(view, InputMethodManager.SHOW_IMPLICIT)
+        }
+    }
+
     private fun savePosition(x: Int, y: Int) {
         getSharedPreferences(PREFS_NAME, MODE_PRIVATE)
             .edit()
@@ -431,15 +485,29 @@ class FloatingControlService : Service() {
     }
 
     private fun clampPosition(currentParams: WindowManager.LayoutParams) {
-        val screenWidth = resources.displayMetrics.widthPixels
-        val screenHeight = resources.displayMetrics.heightPixels
-        val viewWidth = rootView?.width?.takeIf { it > 0 } ?: if (expanded) dp(220) else dp(54)
+        val (screenWidth, screenHeight) = screenSize()
+        val viewWidth = rootView?.width?.takeIf { it > 0 } ?: if (expanded) dp(252) else dp(54)
         val viewHeight = rootView?.height?.takeIf { it > 0 } ?: if (expanded) dp(190) else dp(54)
-        val bottomGestureReserve = dp(132)
+        val bottomGestureReserve = if (screenHeight > screenWidth) dp(132) else dp(56)
         val maxX = (screenWidth - viewWidth - dp(8)).coerceAtLeast(dp(8))
         val maxY = (screenHeight - viewHeight - bottomGestureReserve).coerceAtLeast(dp(8))
         currentParams.x = currentParams.x.coerceIn(dp(8), maxX)
         currentParams.y = currentParams.y.coerceIn(dp(8), maxY)
+    }
+
+    private fun screenSize(): Pair<Int, Int> {
+        val manager = windowManager ?: getSystemService(WINDOW_SERVICE) as WindowManager
+        return if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
+            val bounds = manager.currentWindowMetrics.bounds
+            bounds.width() to bounds.height()
+        } else {
+            @Suppress("DEPRECATION")
+            val display = manager.defaultDisplay
+            val point = Point()
+            @Suppress("DEPRECATION")
+            display.getRealSize(point)
+            point.x to point.y
+        }
     }
 
     private fun dp(value: Int): Int = (value * resources.displayMetrics.density).toInt()

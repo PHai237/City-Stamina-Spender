@@ -60,7 +60,7 @@ class AppColors {
 }
 
 class AppInfo {
-  static const version = '1.0.24';
+  static const version = '1.0.25';
   static const androidApkUrl =
       'https://github.com/PHai237/City-Stamina-Spender/releases/latest/download/City.Stamina.Mobile.apk';
 }
@@ -699,6 +699,32 @@ class OwnerAutomationController {
         log.info('Still running. elapsed=${elapsedSeconds.value}s');
       }
     });
+  }
+
+  Future<void> checkStageOneOne() async {
+    log.info('Manual stage 1-1 check started.');
+    await control.setControlStatus('Checking 1-1');
+    try {
+      final stageCheck = await _verifyStageOneOne();
+      if (!stageCheck.matched) {
+        log.warn(
+          'Manual stage 1-1 check failed. '
+          'score=${stageCheck.score.toStringAsFixed(3)} '
+          'threshold=${stageCheck.threshold.toStringAsFixed(3)}',
+        );
+        await control.setControlStatus('Find 1-1');
+        return;
+      }
+
+      log.info(
+        'Manual stage 1-1 check passed. '
+        'score=${stageCheck.score.toStringAsFixed(3)}',
+      );
+      await control.setControlStatus('1-1 ready');
+    } catch (error) {
+      log.error('Manual stage 1-1 check failed: $error');
+      await control.setControlStatus('Check failed');
+    }
   }
 
   Future<StageCheckResult> _verifyStageOneOne() async {
@@ -1360,9 +1386,15 @@ class _OwnerSelectionPageState extends State<OwnerSelectionPage> {
       return;
     }
 
-    if (event['type'] == 'check') {
-      _log.info('Notification control tapped: Check.');
+    if (event['type'] == 'check' || event['type'] == 'game_check') {
+      _log.info('Floating control tapped: Game.');
       unawaited(_checkGameFromNotification());
+      return;
+    }
+
+    if (event['type'] == 'stage_check') {
+      _log.info('Floating control tapped: Stage.');
+      unawaited(_controller.checkStageOneOne());
       return;
     }
 
