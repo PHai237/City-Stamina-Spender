@@ -111,26 +111,19 @@ class FloatingControlService : Service() {
             WindowManager.LayoutParams.WRAP_CONTENT,
             WindowManager.LayoutParams.WRAP_CONTENT,
             type,
-            WindowManager.LayoutParams.FLAG_NOT_TOUCH_MODAL or WindowManager.LayoutParams.FLAG_WATCH_OUTSIDE_TOUCH,
+            WindowManager.LayoutParams.FLAG_NOT_TOUCH_MODAL,
             PixelFormat.TRANSLUCENT
         ).apply {
             gravity = Gravity.TOP or Gravity.START
             val saved = loadPosition()
             x = saved?.first ?: dp(14)
             y = saved?.second ?: dp(120)
+            clampPosition(this)
         }
 
         rootView = LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
             gravity = Gravity.CENTER
-            setOnTouchListener { _, event ->
-                if (event.action == MotionEvent.ACTION_OUTSIDE && expanded) {
-                    collapseToEdge()
-                    true
-                } else {
-                    false
-                }
-            }
         }
         windowManager?.addView(rootView, params)
         render()
@@ -365,6 +358,7 @@ class FloatingControlService : Service() {
             } else {
                 dp(8)
             }
+            clampPosition(currentParams)
             updateFloatingLayout()
             savePosition(currentParams.x, currentParams.y)
         }
@@ -389,6 +383,18 @@ class FloatingControlService : Service() {
         val prefs = getSharedPreferences(PREFS_NAME, MODE_PRIVATE)
         if (!prefs.contains(KEY_POSITION_X) || !prefs.contains(KEY_POSITION_Y)) return null
         return prefs.getInt(KEY_POSITION_X, dp(14)) to prefs.getInt(KEY_POSITION_Y, dp(120))
+    }
+
+    private fun clampPosition(currentParams: WindowManager.LayoutParams) {
+        val screenWidth = resources.displayMetrics.widthPixels
+        val screenHeight = resources.displayMetrics.heightPixels
+        val viewWidth = rootView?.width?.takeIf { it > 0 } ?: if (expanded) dp(220) else dp(54)
+        val viewHeight = rootView?.height?.takeIf { it > 0 } ?: if (expanded) dp(190) else dp(54)
+        val bottomGestureReserve = dp(132)
+        val maxX = (screenWidth - viewWidth - dp(8)).coerceAtLeast(dp(8))
+        val maxY = (screenHeight - viewHeight - bottomGestureReserve).coerceAtLeast(dp(8))
+        currentParams.x = currentParams.x.coerceIn(dp(8), maxX)
+        currentParams.y = currentParams.y.coerceIn(dp(8), maxY)
     }
 
     private fun dp(value: Int): Int = (value * resources.displayMetrics.density).toInt()
@@ -423,7 +429,6 @@ class FloatingControlService : Service() {
             val currentParams = params ?: return false
             when (event.action) {
                 MotionEvent.ACTION_OUTSIDE -> {
-                    if (expanded) collapseToEdge()
                     return false
                 }
                 MotionEvent.ACTION_DOWN -> {
@@ -439,7 +444,8 @@ class FloatingControlService : Service() {
                     val dy = (event.rawY - touchY).toInt()
                     if (abs(dx) + abs(dy) < dp(8)) return true
                     currentParams.x = startX + dx
-                    currentParams.y = (startY + dy).coerceAtLeast(dp(8))
+                    currentParams.y = startY + dy
+                    clampPosition(currentParams)
                     updateFloatingLayout()
                     dragging = true
                     return true
