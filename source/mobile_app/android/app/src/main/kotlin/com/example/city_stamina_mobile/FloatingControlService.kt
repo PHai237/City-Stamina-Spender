@@ -360,7 +360,7 @@ class FloatingControlService : Service() {
     }
 
     private fun checkActiveAppFromFloating() {
-        val activePackage = AutomationAccessibilityService.lastPackageName
+        val activePackage = AutomationAccessibilityService.bestForegroundPackage(packageName)
         status = when {
             !AutomationAccessibilityService.isConnected -> "Accessibility missing"
             activePackage.isBlank() -> "Game unknown"

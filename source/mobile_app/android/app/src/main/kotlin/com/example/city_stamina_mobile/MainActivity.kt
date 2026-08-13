@@ -346,7 +346,9 @@ class MainActivity : FlutterActivity() {
             "screenHeight" to metrics.heightPixels,
             "densityDpi" to metrics.densityDpi,
             "accessibilityEnabled" to (isAutomationAccessibilityEnabled() && AutomationAccessibilityService.isConnected),
-            "activePackage" to AutomationAccessibilityService.lastPackageName
+            "activePackage" to AutomationAccessibilityService.bestForegroundPackage(packageName),
+            "rawActivePackage" to AutomationAccessibilityService.lastPackageName,
+            "lastExternalPackage" to AutomationAccessibilityService.lastExternalPackageName
         )
     }
 
