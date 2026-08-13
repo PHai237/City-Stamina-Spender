@@ -9,12 +9,15 @@ import android.graphics.PixelFormat
 import android.graphics.Typeface
 import android.graphics.drawable.GradientDrawable
 import android.os.Build
+import android.os.Handler
 import android.os.IBinder
+import android.os.Looper
 import android.provider.Settings
 import android.view.Gravity
 import android.view.MotionEvent
 import android.view.View
 import android.view.WindowManager
+import android.view.inputmethod.EditorInfo
 import android.view.inputmethod.InputMethodManager
 import android.widget.Button
 import android.widget.EditText
@@ -48,6 +51,8 @@ class FloatingControlService : Service() {
     private var isRunning = false
     private var amount = ""
     private var status = "Ready"
+    private var statusVersion = 0
+    private val handler = Handler(Looper.getMainLooper())
 
     private val bg = Color.rgb(11, 15, 26)
     private val bubbleBg = Color.rgb(21, 29, 46)
@@ -85,6 +90,7 @@ class FloatingControlService : Service() {
             }
             ACTION_SET_STATUS -> {
                 status = intent.getStringExtra(KEY_STATUS) ?: "Ready"
+                statusVersion += 1
                 updateUi()
             }
             else -> showFloatingView()
@@ -142,6 +148,7 @@ class FloatingControlService : Service() {
     }
 
     private fun removeFloatingView() {
+        hideKeyboard()
         rootView?.let { windowManager?.removeView(it) }
         rootView = null
         params = null
@@ -259,9 +266,21 @@ class FloatingControlService : Service() {
             textSize = 20f
             typeface = Typeface.DEFAULT_BOLD
             setSingleLine(true)
+            imeOptions = EditorInfo.IME_ACTION_DONE
+            minWidth = 0
             setText(amount)
             setPadding(dp(12), 0, dp(12), 0)
             background = rounded(inputBg, dp(12), border)
+            setOnEditorActionListener { _, actionId, _ ->
+                if (actionId == EditorInfo.IME_ACTION_DONE) {
+                    syncAmountFromInput()
+                    hideKeyboard()
+                    clearFocus()
+                    true
+                } else {
+                    false
+                }
+            }
             setOnClickListener {
                 requestFocus()
                 showKeyboard(this)
@@ -287,12 +306,18 @@ class FloatingControlService : Service() {
         }
         runButton = Button(this).apply {
             text = if (isRunning) "Stop" else "Run"
-            textSize = 14f
+            textSize = 12f
             typeface = Typeface.DEFAULT_BOLD
+            isAllCaps = false
+            minWidth = 0
+            minHeight = 0
+            includeFontPadding = false
+            setSingleLine(true)
             setTextColor(if (isRunning) coral else mint)
             background = rounded(if (isRunning) coralDim else mintDim, dp(12), if (isRunning) coralBorder else mintBorder)
             setOnClickListener {
                 syncAmountFromInput()
+                hideKeyboard()
                 isRunning = !isRunning
                 sendBroadcast(
                     Intent(ControlService.ACTION_TOGGLE_REQUEST)
@@ -305,12 +330,18 @@ class FloatingControlService : Service() {
         }
         val gameButton = Button(this).apply {
             text = "Game"
-            textSize = 14f
+            textSize = 12f
             typeface = Typeface.DEFAULT_BOLD
+            isAllCaps = false
+            minWidth = 0
+            minHeight = 0
+            includeFontPadding = false
+            setSingleLine(true)
             setTextColor(sub)
             background = rounded(Color.argb(10, 255, 255, 255), dp(12), border)
             setOnClickListener {
                 syncAmountFromInput()
+                hideKeyboard()
                 checkActiveAppFromFloating()
                 sendBroadcast(
                     Intent(ControlService.ACTION_TOGGLE_REQUEST)
@@ -321,13 +352,21 @@ class FloatingControlService : Service() {
         }
         val stageButton = Button(this).apply {
             text = "Stage"
-            textSize = 14f
+            textSize = 12f
             typeface = Typeface.DEFAULT_BOLD
+            isAllCaps = false
+            minWidth = 0
+            minHeight = 0
+            includeFontPadding = false
+            setSingleLine(true)
             setTextColor(sub)
             background = rounded(Color.argb(10, 255, 255, 255), dp(12), border)
             setOnClickListener {
                 syncAmountFromInput()
+                hideKeyboard()
                 status = "Checking 1-1"
+                statusVersion += 1
+                val waitingVersion = statusVersion
                 updateUi()
                 startService(
                     Intent(this@FloatingControlService, ControlService::class.java)
@@ -340,6 +379,18 @@ class FloatingControlService : Service() {
                         .putExtra("stage", "1-1")
                         .putExtra("amount", amount)
                 )
+                handler.postDelayed({
+                    if (expanded && status == "Checking 1-1" && statusVersion == waitingVersion) {
+                        status = "Open app"
+                        statusVersion += 1
+                        updateUi()
+                        startService(
+                            Intent(this@FloatingControlService, ControlService::class.java)
+                                .setAction(ControlService.ACTION_SET_STATUS)
+                                .putExtra(ControlService.KEY_STATUS, status)
+                        )
+                    }
+                }, 6000)
             }
         }
         actions.addView(runButton, LinearLayout.LayoutParams(0, dp(46), 1f))
@@ -368,7 +419,7 @@ class FloatingControlService : Service() {
         })
         card.addView(body, LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, LinearLayout.LayoutParams.WRAP_CONTENT))
 
-        root.addView(card, LinearLayout.LayoutParams(dp(220), LinearLayout.LayoutParams.WRAP_CONTENT))
+        root.addView(card, LinearLayout.LayoutParams(dp(292), LinearLayout.LayoutParams.WRAP_CONTENT))
     }
 
     private fun syncAmountFromInput() {
@@ -399,7 +450,7 @@ class FloatingControlService : Service() {
         val currentParams = params ?: return
         currentParams.flags = floatingFlags()
         currentParams.softInputMode = WindowManager.LayoutParams.SOFT_INPUT_ADJUST_NOTHING
-        currentParams.width = if (expanded) dp(252) else dp(54)
+        currentParams.width = if (expanded) dp(292) else dp(54)
         currentParams.height = WindowManager.LayoutParams.WRAP_CONTENT
         if (!expanded) currentParams.height = dp(54)
         clampPosition(currentParams)
@@ -408,6 +459,7 @@ class FloatingControlService : Service() {
 
     private fun checkActiveAppFromFloating() {
         val activePackage = AutomationAccessibilityService.bestForegroundPackage(packageName)
+        statusVersion += 1
         status = when {
             !AutomationAccessibilityService.isConnected -> "Enable Access"
             activePackage.isBlank() -> "No app"
@@ -431,6 +483,7 @@ class FloatingControlService : Service() {
     }
 
     private fun collapseToEdge() {
+        hideKeyboard()
         expanded = false
         val currentParams = params
         if (currentParams != null) {
@@ -470,6 +523,13 @@ class FloatingControlService : Service() {
         }
     }
 
+    private fun hideKeyboard() {
+        val view = amountInput ?: rootView ?: return
+        val inputManager = getSystemService(Context.INPUT_METHOD_SERVICE) as InputMethodManager
+        inputManager.hideSoftInputFromWindow(view.windowToken, 0)
+        amountInput?.clearFocus()
+    }
+
     private fun savePosition(x: Int, y: Int) {
         getSharedPreferences(PREFS_NAME, MODE_PRIVATE)
             .edit()
@@ -486,7 +546,7 @@ class FloatingControlService : Service() {
 
     private fun clampPosition(currentParams: WindowManager.LayoutParams) {
         val (screenWidth, screenHeight) = screenSize()
-        val viewWidth = rootView?.width?.takeIf { it > 0 } ?: if (expanded) dp(252) else dp(54)
+        val viewWidth = rootView?.width?.takeIf { it > 0 } ?: if (expanded) dp(292) else dp(54)
         val viewHeight = rootView?.height?.takeIf { it > 0 } ?: if (expanded) dp(190) else dp(54)
         val bottomGestureReserve = if (screenHeight > screenWidth) dp(132) else dp(56)
         val maxX = (screenWidth - viewWidth - dp(8)).coerceAtLeast(dp(8))
