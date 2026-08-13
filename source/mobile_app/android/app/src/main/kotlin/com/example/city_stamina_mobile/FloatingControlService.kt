@@ -30,6 +30,9 @@ class FloatingControlService : Service() {
         const val ACTION_SET_STATUS = "city_stamina_mobile.floating.SET_STATUS"
         const val KEY_AMOUNT = ControlService.KEY_AMOUNT
         const val KEY_STATUS = ControlService.KEY_STATUS
+        private const val PREFS_NAME = "city_stamina_floating"
+        private const val KEY_POSITION_X = "position_x"
+        private const val KEY_POSITION_Y = "position_y"
     }
 
     private var windowManager: WindowManager? = null
@@ -112,8 +115,9 @@ class FloatingControlService : Service() {
             PixelFormat.TRANSLUCENT
         ).apply {
             gravity = Gravity.TOP or Gravity.START
-            x = dp(14)
-            y = dp(120)
+            val saved = loadPosition()
+            x = saved?.first ?: dp(14)
+            y = saved?.second ?: dp(120)
         }
 
         rootView = LinearLayout(this).apply {
@@ -361,9 +365,30 @@ class FloatingControlService : Service() {
             } else {
                 dp(8)
             }
-            windowManager?.updateViewLayout(rootView, currentParams)
+            updateFloatingLayout()
+            savePosition(currentParams.x, currentParams.y)
         }
         render()
+    }
+
+    private fun updateFloatingLayout() {
+        val view = rootView ?: return
+        val currentParams = params ?: return
+        windowManager?.updateViewLayout(view, currentParams)
+    }
+
+    private fun savePosition(x: Int, y: Int) {
+        getSharedPreferences(PREFS_NAME, MODE_PRIVATE)
+            .edit()
+            .putInt(KEY_POSITION_X, x)
+            .putInt(KEY_POSITION_Y, y)
+            .apply()
+    }
+
+    private fun loadPosition(): Pair<Int, Int>? {
+        val prefs = getSharedPreferences(PREFS_NAME, MODE_PRIVATE)
+        if (!prefs.contains(KEY_POSITION_X) || !prefs.contains(KEY_POSITION_Y)) return null
+        return prefs.getInt(KEY_POSITION_X, dp(14)) to prefs.getInt(KEY_POSITION_Y, dp(120))
     }
 
     private fun dp(value: Int): Int = (value * resources.displayMetrics.density).toInt()
@@ -415,13 +440,14 @@ class FloatingControlService : Service() {
                     if (abs(dx) + abs(dy) < dp(8)) return true
                     currentParams.x = startX + dx
                     currentParams.y = (startY + dy).coerceAtLeast(dp(8))
-                    windowManager?.updateViewLayout(view, currentParams)
+                    updateFloatingLayout()
                     dragging = true
                     return true
                 }
                 MotionEvent.ACTION_UP -> {
                     if (dragging) {
                         if (snapOnRelease) collapseToEdge()
+                        else savePosition(currentParams.x, currentParams.y)
                         return true
                     }
                     clickAction?.invoke()
