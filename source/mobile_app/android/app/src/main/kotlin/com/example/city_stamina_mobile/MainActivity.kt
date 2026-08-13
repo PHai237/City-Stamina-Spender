@@ -145,6 +145,23 @@ class MainActivity : FlutterActivity() {
                         result.error("ACCESSIBILITY_NOT_READY", "Accessibility service is not ready.", null)
                     }
                 }
+                "swipeScreen" -> {
+                    val startX = call.argument<Number>("startX")?.toFloat()
+                    val startY = call.argument<Number>("startY")?.toFloat()
+                    val endX = call.argument<Number>("endX")?.toFloat()
+                    val endY = call.argument<Number>("endY")?.toFloat()
+                    val durationMs = call.argument<Number>("durationMs")?.toLong() ?: 360L
+                    if (startX == null || startY == null || endX == null || endY == null) {
+                        result.error("BAD_ARGUMENTS", "swipeScreen requires startX, startY, endX, and endY.", null)
+                        return@setMethodCallHandler
+                    }
+                    val swiped = AutomationAccessibilityService.swipe(startX, startY, endX, endY, durationMs)
+                    if (swiped) {
+                        result.success(true)
+                    } else {
+                        result.error("ACCESSIBILITY_NOT_READY", "Accessibility service is not ready.", null)
+                    }
+                }
                 "openAccessibilitySettings" -> {
                     startActivity(Intent(Settings.ACTION_ACCESSIBILITY_SETTINGS).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK))
                     result.success(null)

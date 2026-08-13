@@ -60,7 +60,7 @@ class AppColors {
 }
 
 class AppInfo {
-  static const version = '1.0.26';
+  static const version = '1.0.27';
   static const androidApkUrl =
       'https://github.com/PHai237/City-Stamina-Spender/releases/latest/download/City.Stamina.Mobile.apk';
 }
@@ -669,7 +669,7 @@ class OwnerAutomationController {
 
     final StageCheckResult stageCheck;
     try {
-      stageCheck = await _verifyStageOneOne();
+      stageCheck = await _ensureStageOneOneSelected();
     } catch (error) {
       log.error('Stage 1-1 check failed: $error');
       await control.setControlStatus('Check failed');
@@ -705,7 +705,7 @@ class OwnerAutomationController {
     log.info('Manual stage 1-1 check started.');
     await control.setControlStatus('Checking 1-1');
     try {
-      final stageCheck = await _verifyStageOneOne();
+      final stageCheck = await _ensureStageOneOneSelected();
       if (!stageCheck.matched) {
         log.warn(
           'Manual stage 1-1 check failed. '
@@ -746,6 +746,32 @@ class OwnerAutomationController {
         // Run cleanup should not hide the stage-check result.
       }
     }
+  }
+
+  Future<StageCheckResult> _ensureStageOneOneSelected() async {
+    var best = await _verifyStageOneOne();
+    if (best.matched) return best;
+
+    for (var attempt = 1; attempt <= 3; attempt += 1) {
+      log.info(
+        'Stage 1-1 not selected yet. '
+        'score=${best.score.toStringAsFixed(3)}. '
+        'Scrolling toward 1-1 attempt=$attempt.',
+      );
+      await control.setControlStatus('Scroll 1-1');
+      await control.swipeScreenByRatio(
+        startX: 0.12,
+        startY: 0.28,
+        endX: 0.12,
+        endY: 0.72,
+        durationMs: 420,
+      );
+      await Future<void>.delayed(const Duration(milliseconds: 800));
+      best = await _verifyStageOneOne();
+      if (best.matched) return best;
+    }
+
+    return best;
   }
 
   void stop() {
@@ -849,6 +875,46 @@ class AndroidControlController {
     if (!Platform.isAndroid) return false;
     return await _channel.invokeMethod<bool>('tapScreen', {'x': x, 'y': y}) ??
         false;
+  }
+
+  Future<bool> swipeScreen(
+    double startX,
+    double startY,
+    double endX,
+    double endY, {
+    int durationMs = 360,
+  }) async {
+    if (!Platform.isAndroid) return false;
+    return await _channel.invokeMethod<bool>('swipeScreen', {
+          'startX': startX,
+          'startY': startY,
+          'endX': endX,
+          'endY': endY,
+          'durationMs': durationMs,
+        }) ??
+        false;
+  }
+
+  Future<bool> swipeScreenByRatio({
+    required double startX,
+    required double startY,
+    required double endX,
+    required double endY,
+    int durationMs = 360,
+  }) async {
+    final info = await MobileDiagnosticsService(log).getDeviceInfo();
+    final width = (info['screenWidth'] as num?)?.toDouble() ?? 0;
+    final height = (info['screenHeight'] as num?)?.toDouble() ?? 0;
+    if (width <= 0 || height <= 0) {
+      throw StateError('Could not read screen size for swipe.');
+    }
+    return swipeScreen(
+      width * startX,
+      height * startY,
+      width * endX,
+      height * endY,
+      durationMs: durationMs,
+    );
   }
 }
 

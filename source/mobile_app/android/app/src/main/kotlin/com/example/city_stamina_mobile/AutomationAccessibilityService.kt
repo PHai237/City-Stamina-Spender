@@ -34,6 +34,18 @@ class AutomationAccessibilityService : AccessibilityService() {
             return service.dispatchGesture(gesture, null, null)
         }
 
+        fun swipe(startX: Float, startY: Float, endX: Float, endY: Float, durationMs: Long): Boolean {
+            val service = instance ?: return false
+            val path = Path().apply {
+                moveTo(startX, startY)
+                lineTo(endX, endY)
+            }
+            val gesture = GestureDescription.Builder()
+                .addStroke(GestureDescription.StrokeDescription(path, 0, durationMs.coerceAtLeast(120)))
+                .build()
+            return service.dispatchGesture(gesture, null, null)
+        }
+
         fun bestForegroundPackage(appPackageName: String): String {
             val service = instance
             val windowPackage = service?.windows
