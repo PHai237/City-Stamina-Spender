@@ -21,8 +21,8 @@ const state = {
   isDetailVisible: false,
   isRunning: false,
   stageDropdownOpen: false,
-  currentVersion: "1.2.31",
-  latestVersion: "1.2.31",
+  currentVersion: "1.2.32",
+  latestVersion: "1.2.32",
   updateState: "checking",
   updateMessage: "Checking for updates...",
   updateProgress: 0,
@@ -168,13 +168,15 @@ function hubView() {
               <div class="badge mono"><span class="dot"></span>Ready</div>
             </div>
 
-            <div class="module-row">
-              <span class="module-label">Stages</span>
-              <span class="module-value">1-1 / 1-9</span>
-            </div>
-            <div class="module-row">
-              <span class="module-label">Primary</span>
-              <span class="module-value">1-1 owner loop</span>
+            <div class="module-meta">
+              <div class="module-row">
+                <span class="module-label">Stages</span>
+                <span class="module-value">1-1 / 1-9</span>
+              </div>
+              <div class="module-row">
+                <span class="module-label">Primary</span>
+                <span class="module-value">1-1 owner loop</span>
+              </div>
             </div>
           </button>
         </div>
