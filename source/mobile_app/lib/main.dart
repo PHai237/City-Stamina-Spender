@@ -60,7 +60,7 @@ class AppColors {
 }
 
 class AppInfo {
-  static const version = '1.0.27';
+  static const version = '1.0.28';
   static const androidApkUrl =
       'https://github.com/PHai237/City-Stamina-Spender/releases/latest/download/City.Stamina.Mobile.apk';
 }
@@ -659,7 +659,7 @@ class OwnerAutomationController {
     }
 
     log.info('Run started. stage=$stage target=$parsed');
-    await control.setControlStatus('Checking $stage');
+    await control.setControlStatus('Checking stage');
 
     if (stage != '1-1') {
       log.warn('Mobile runner currently supports the 1-1 screen check only.');
@@ -688,7 +688,7 @@ class OwnerAutomationController {
       'Stage 1-1 verified. score=${stageCheck.score.toStringAsFixed(3)} '
       'at x=${stageCheck.x} y=${stageCheck.y}',
     );
-    await control.setControlStatus('1-1 ready');
+    await control.setControlStatus('Stage 1-1');
 
     elapsedSeconds.value = 0;
     isRunning.value = true;
@@ -703,7 +703,7 @@ class OwnerAutomationController {
 
   Future<void> checkStageOneOne() async {
     log.info('Manual stage 1-1 check started.');
-    await control.setControlStatus('Checking 1-1');
+    await control.setControlStatus('Checking stage');
     try {
       final stageCheck = await _ensureStageOneOneSelected();
       if (!stageCheck.matched) {
@@ -720,7 +720,7 @@ class OwnerAutomationController {
         'Manual stage 1-1 check passed. '
         'score=${stageCheck.score.toStringAsFixed(3)}',
       );
-      await control.setControlStatus('1-1 ready');
+      await control.setControlStatus('Stage 1-1');
     } catch (error) {
       log.error('Manual stage 1-1 check failed: $error');
       await control.setControlStatus('Check failed');
@@ -957,7 +957,7 @@ class _AutomationHubPageState extends State<AutomationHubPage> {
               const SizedBox(height: 18),
               _HubAutomationCard(
                 title: "Owner's Selection",
-                subtitle: 'NTE - 1-1 / 1-9',
+                subtitle: 'NTE - 1-1',
                 status: 'Ready',
                 icon: Icons.local_cafe_rounded,
                 color: AppColors.primary,
@@ -1241,12 +1241,6 @@ class _OwnerSelectionPageState extends State<OwnerSelectionPage> {
                     ),
                     const SizedBox(height: 12),
                     _ActionRow(
-                      icon: Icons.refresh_rounded,
-                      title: 'Update',
-                      onTap: () async => _openAndroidDownload(context),
-                    ),
-                    const SizedBox(height: 10),
-                    _ActionRow(
                       icon: Icons.touch_app_rounded,
                       title: 'Accessibility',
                       onTap: _openAccessibilitySettings,
@@ -1256,6 +1250,12 @@ class _OwnerSelectionPageState extends State<OwnerSelectionPage> {
                       icon: Icons.picture_in_picture_alt_rounded,
                       title: 'Floating',
                       onTap: _openFloatingControl,
+                    ),
+                    const SizedBox(height: 10),
+                    _ActionRow(
+                      icon: Icons.refresh_rounded,
+                      title: 'Update',
+                      onTap: () async => _openAndroidDownload(context),
                     ),
                     const SizedBox(height: 10),
                     _ActionRow(
@@ -1572,15 +1572,15 @@ class _BackToHubButton extends StatelessWidget {
       alignment: Alignment.centerLeft,
       child: Material(
         color: AppColors.panel,
-        borderRadius: BorderRadius.circular(16),
+        borderRadius: BorderRadius.circular(8),
         child: InkWell(
           onTap: onTap,
-          borderRadius: BorderRadius.circular(16),
+          borderRadius: BorderRadius.circular(8),
           child: Container(
             padding: const EdgeInsets.symmetric(horizontal: 13, vertical: 9),
             decoration: BoxDecoration(
               border: Border.all(color: AppColors.border),
-              borderRadius: BorderRadius.circular(16),
+              borderRadius: BorderRadius.circular(8),
             ),
             child: const Row(
               mainAxisSize: MainAxisSize.min,
@@ -1629,15 +1629,15 @@ class _HubAutomationCard extends StatelessWidget {
   Widget build(BuildContext context) {
     return Material(
       color: AppColors.surface,
-      borderRadius: BorderRadius.circular(20),
+      borderRadius: BorderRadius.circular(8),
       child: InkWell(
         onTap: onTap,
-        borderRadius: BorderRadius.circular(20),
+        borderRadius: BorderRadius.circular(8),
         child: Container(
           padding: const EdgeInsets.all(16),
           decoration: BoxDecoration(
             border: Border.all(color: AppColors.border),
-            borderRadius: BorderRadius.circular(20),
+            borderRadius: BorderRadius.circular(8),
           ),
           child: Row(
             children: [
@@ -1646,7 +1646,7 @@ class _HubAutomationCard extends StatelessWidget {
                 height: 42,
                 decoration: BoxDecoration(
                   color: color.withValues(alpha: 0.16),
-                  borderRadius: BorderRadius.circular(13),
+                  borderRadius: BorderRadius.circular(8),
                 ),
                 child: Icon(icon, color: color, size: 20),
               ),
@@ -1717,7 +1717,7 @@ class _AmountCard extends StatelessWidget {
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           const Text(
-            'City Stamina',
+            'AMOUNT',
             style: TextStyle(
               color: AppColors.muted,
               fontFamily: 'monospace',
@@ -1769,17 +1769,17 @@ class _StageSelector extends StatelessWidget {
       color: AppColors.panel,
       padding: const EdgeInsets.all(6),
       child: Row(
-        children: ['1-1', '1-9'].map((stage) {
+        children: ['1-1'].map((stage) {
           final selected = value == stage;
           return Expanded(
             child: Padding(
               padding: const EdgeInsets.symmetric(horizontal: 3),
               child: Material(
                 color: selected ? AppColors.primaryDim : Colors.transparent,
-                borderRadius: BorderRadius.circular(14),
+                borderRadius: BorderRadius.circular(6),
                 child: InkWell(
                   onTap: () => onChanged(stage),
-                  borderRadius: BorderRadius.circular(14),
+                  borderRadius: BorderRadius.circular(6),
                   child: Container(
                     padding: const EdgeInsets.symmetric(vertical: 11),
                     decoration: BoxDecoration(
@@ -1788,7 +1788,7 @@ class _StageSelector extends StatelessWidget {
                             ? AppColors.primary.withValues(alpha: 0.22)
                             : Colors.transparent,
                       ),
-                      borderRadius: BorderRadius.circular(14),
+                      borderRadius: BorderRadius.circular(6),
                     ),
                     child: Text(
                       stage,
@@ -1828,7 +1828,7 @@ class _Surface extends StatelessWidget {
       decoration: BoxDecoration(
         color: color,
         border: Border.all(color: AppColors.border),
-        borderRadius: BorderRadius.circular(20),
+        borderRadius: BorderRadius.circular(8),
       ),
       child: child,
     );
@@ -1847,15 +1847,15 @@ class _RunButton extends StatelessWidget {
     final fg = running ? AppColors.danger : AppColors.primary;
     return Material(
       color: bg,
-      borderRadius: BorderRadius.circular(20),
+      borderRadius: BorderRadius.circular(8),
       child: InkWell(
         onTap: onPressed,
-        borderRadius: BorderRadius.circular(20),
+        borderRadius: BorderRadius.circular(8),
         child: Container(
           padding: const EdgeInsets.symmetric(vertical: 16),
           decoration: BoxDecoration(
             border: Border.all(color: fg.withValues(alpha: 0.3), width: 1.5),
-            borderRadius: BorderRadius.circular(20),
+            borderRadius: BorderRadius.circular(8),
           ),
           child: Row(
             mainAxisAlignment: MainAxisAlignment.center,
@@ -1893,16 +1893,16 @@ class _CheckButton extends StatelessWidget {
     final fg = disabled ? AppColors.muted : AppColors.blue;
     return Material(
       color: disabled ? AppColors.panel : AppColors.surface,
-      borderRadius: BorderRadius.circular(20),
+      borderRadius: BorderRadius.circular(8),
       child: InkWell(
         onTap: onPressed,
-        borderRadius: BorderRadius.circular(20),
+        borderRadius: BorderRadius.circular(8),
         child: Container(
           width: 104,
           padding: const EdgeInsets.symmetric(vertical: 16),
           decoration: BoxDecoration(
             border: Border.all(color: fg.withValues(alpha: 0.28), width: 1.5),
-            borderRadius: BorderRadius.circular(20),
+            borderRadius: BorderRadius.circular(8),
           ),
           child: FittedBox(
             fit: BoxFit.scaleDown,
@@ -1943,15 +1943,15 @@ class _ActionRow extends StatelessWidget {
   Widget build(BuildContext context) {
     return Material(
       color: AppColors.surface,
-      borderRadius: BorderRadius.circular(16),
+      borderRadius: BorderRadius.circular(8),
       child: InkWell(
         onTap: onTap,
-        borderRadius: BorderRadius.circular(16),
+        borderRadius: BorderRadius.circular(8),
         child: Container(
           padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 13),
           decoration: BoxDecoration(
             border: Border.all(color: AppColors.border),
-            borderRadius: BorderRadius.circular(16),
+            borderRadius: BorderRadius.circular(8),
           ),
           child: Row(
             children: [

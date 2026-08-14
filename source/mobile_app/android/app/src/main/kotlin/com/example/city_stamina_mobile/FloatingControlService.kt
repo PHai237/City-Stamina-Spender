@@ -54,10 +54,10 @@ class FloatingControlService : Service() {
     private var statusVersion = 0
     private val handler = Handler(Looper.getMainLooper())
 
-    private val bg = Color.rgb(11, 15, 26)
-    private val bubbleBg = Color.rgb(21, 29, 46)
-    private val panelBg = Color.rgb(20, 26, 40)
-    private val inputBg = Color.rgb(17, 22, 36)
+    private val bg = Color.rgb(10, 13, 22)
+    private val bubbleBg = Color.rgb(18, 24, 38)
+    private val panelBg = Color.rgb(17, 22, 34)
+    private val inputBg = Color.rgb(12, 16, 26)
     private val border = Color.argb(24, 255, 255, 255)
     private val mint = Color.rgb(52, 211, 153)
     private val mintDim = Color.argb(31, 52, 211, 153)
@@ -68,6 +68,8 @@ class FloatingControlService : Service() {
     private val fg = Color.rgb(220, 230, 245)
     private val sub = Color.rgb(122, 138, 170)
     private val muted = Color.rgb(58, 69, 96)
+    private val trayWidthDp = 276
+    private val bubbleSizeDp = 46
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
         when (intent?.action) {
@@ -182,62 +184,62 @@ class FloatingControlService : Service() {
             })
         }
         bubble.addView(TextView(this).apply {
-            text = if (isRunning) "ON" else "S"
+            text = if (isRunning) "RUN" else "CS"
             gravity = Gravity.CENTER
-            textSize = if (isRunning) 12f else 15f
+            textSize = if (isRunning) 10f else 12f
             typeface = Typeface.DEFAULT_BOLD
             setTextColor(if (isRunning) mint else sub)
             background = oval(if (isRunning) mintDim else Color.argb(10, 255, 255, 255), if (isRunning) mintBorder else border)
-        }, FrameLayout.LayoutParams(dp(32), dp(32), Gravity.CENTER))
+        }, FrameLayout.LayoutParams(dp(30), dp(30), Gravity.CENTER))
         if (isRunning) {
             bubble.addView(View(this).apply {
                 background = oval(mint, bg)
-            }, FrameLayout.LayoutParams(dp(10), dp(10), Gravity.TOP or Gravity.END).apply {
-                topMargin = dp(6)
-                rightMargin = dp(6)
+            }, FrameLayout.LayoutParams(dp(8), dp(8), Gravity.TOP or Gravity.END).apply {
+                topMargin = dp(5)
+                rightMargin = dp(5)
             })
         }
-        root.addView(bubble, LinearLayout.LayoutParams(dp(54), dp(54)))
+        root.addView(bubble, LinearLayout.LayoutParams(dp(bubbleSizeDp), dp(bubbleSizeDp)))
     }
 
     private fun renderMenu(root: LinearLayout) {
         val card = LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
-            background = rounded(panelBg, dp(20), border)
+            background = rounded(panelBg, dp(8), border)
         }
 
         val header = LinearLayout(this).apply {
             orientation = LinearLayout.HORIZONTAL
             gravity = Gravity.CENTER_VERTICAL
-            setPadding(dp(12), dp(10), dp(10), dp(8))
-            background = rounded(Color.argb(10, 255, 255, 255), dp(20))
+            setPadding(dp(10), dp(8), dp(8), dp(8))
+            background = rounded(Color.argb(8, 255, 255, 255), dp(8))
             setOnTouchListener(DragTouchListener())
         }
         header.addView(TextView(this).apply {
-            text = "S"
+            text = "CS"
             gravity = Gravity.CENTER
-            textSize = 11f
+            textSize = 10f
             typeface = Typeface.DEFAULT_BOLD
             setTextColor(mint)
-            background = rounded(mintDim, dp(8), mintBorder)
-        }, LinearLayout.LayoutParams(dp(22), dp(22)).apply {
-            rightMargin = dp(7)
+            background = rounded(mintDim, dp(6), mintBorder)
+        }, LinearLayout.LayoutParams(dp(26), dp(22)).apply {
+            rightMargin = dp(8)
         })
         header.addView(TextView(this).apply {
-            text = "City Stamina"
+            text = "Owner 1-1"
             textSize = 12f
             typeface = Typeface.DEFAULT_BOLD
             setTextColor(fg)
         }, LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f))
         header.addView(TextView(this).apply {
-            text = "-"
+            text = "Hide"
             gravity = Gravity.CENTER
-            textSize = 18f
+            textSize = 10f
             typeface = Typeface.DEFAULT_BOLD
             setTextColor(sub)
-            background = rounded(Color.argb(13, 255, 255, 255), dp(8), border)
+            background = rounded(Color.argb(13, 255, 255, 255), dp(6), border)
             setOnClickListener { collapseToEdge() }
-        }, LinearLayout.LayoutParams(dp(26), dp(26)).apply {
+        }, LinearLayout.LayoutParams(dp(42), dp(26)).apply {
             rightMargin = dp(4)
         })
         header.addView(TextView(this).apply {
@@ -246,7 +248,7 @@ class FloatingControlService : Service() {
             textSize = 13f
             typeface = Typeface.DEFAULT_BOLD
             setTextColor(coral)
-            background = rounded(coralDim, dp(8), coralBorder)
+            background = rounded(coralDim, dp(6), coralBorder)
             setOnClickListener {
                 removeFloatingView()
                 stopSelf()
@@ -256,21 +258,38 @@ class FloatingControlService : Service() {
 
         val body = LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
-            setPadding(dp(12), dp(12), dp(12), dp(14))
+            setPadding(dp(10), dp(10), dp(10), dp(10))
+        }
+
+        statusText = TextView(this).apply {
+            text = status
+            setTextColor(statusColor(status))
+            textSize = 11f
+            typeface = Typeface.MONOSPACE
+            maxLines = 1
+            gravity = Gravity.CENTER_VERTICAL
+            background = rounded(statusBackground(status), dp(6), border)
+            setPadding(dp(10), dp(7), dp(10), dp(7))
+        }
+        body.addView(statusText, LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, dp(30)))
+
+        val primaryRow = LinearLayout(this).apply {
+            orientation = LinearLayout.HORIZONTAL
+            gravity = Gravity.CENTER_VERTICAL
         }
 
         amountInput = EditText(this).apply {
             hint = "Amount"
             setHintTextColor(muted)
             setTextColor(fg)
-            textSize = 20f
+            textSize = 18f
             typeface = Typeface.DEFAULT_BOLD
             setSingleLine(true)
             imeOptions = EditorInfo.IME_ACTION_DONE
             minWidth = 0
             setText(amount)
-            setPadding(dp(12), 0, dp(12), 0)
-            background = rounded(inputBg, dp(12), border)
+            setPadding(dp(10), 0, dp(10), 0)
+            background = rounded(inputBg, dp(6), border)
             setOnEditorActionListener { _, actionId, _ ->
                 if (actionId == EditorInfo.IME_ACTION_DONE) {
                     syncAmountFromInput()
@@ -289,24 +308,15 @@ class FloatingControlService : Service() {
                 if (hasFocus) showKeyboard(view)
             }
         }
-        body.addView(TextView(this).apply {
-            text = "STAMINA AMOUNT"
-            textSize = 9f
-            typeface = Typeface.MONOSPACE
-            letterSpacing = 0.1f
-            setTextColor(muted)
-        }, LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, LinearLayout.LayoutParams.WRAP_CONTENT))
-        body.addView(amountInput, LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, dp(50)).apply {
-            topMargin = dp(4)
-        })
+        primaryRow.addView(amountInput, LinearLayout.LayoutParams(0, dp(44), 1f))
 
-        val actions = LinearLayout(this).apply {
+        val secondaryRow = LinearLayout(this).apply {
             orientation = LinearLayout.HORIZONTAL
             gravity = Gravity.CENTER
         }
         runButton = Button(this).apply {
             text = if (isRunning) "Stop" else "Run"
-            textSize = 12f
+            textSize = 13f
             typeface = Typeface.DEFAULT_BOLD
             isAllCaps = false
             minWidth = 0
@@ -314,7 +324,7 @@ class FloatingControlService : Service() {
             includeFontPadding = false
             setSingleLine(true)
             setTextColor(if (isRunning) coral else mint)
-            background = rounded(if (isRunning) coralDim else mintDim, dp(12), if (isRunning) coralBorder else mintBorder)
+            background = rounded(if (isRunning) coralDim else mintDim, dp(6), if (isRunning) coralBorder else mintBorder)
             setOnClickListener {
                 syncAmountFromInput()
                 hideKeyboard()
@@ -328,20 +338,20 @@ class FloatingControlService : Service() {
                 updateUi()
             }
         }
-        val gameButton = Button(this).apply {
-            text = "Game"
-            textSize = 12f
-            typeface = Typeface.DEFAULT_BOLD
-            isAllCaps = false
-            minWidth = 0
-            minHeight = 0
-            includeFontPadding = false
-            setSingleLine(true)
-            setTextColor(sub)
-            background = rounded(Color.argb(10, 255, 255, 255), dp(12), border)
+        primaryRow.addView(runButton, LinearLayout.LayoutParams(dp(86), dp(44)).apply {
+            leftMargin = dp(8)
+        })
+        body.addView(primaryRow, LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, LinearLayout.LayoutParams.WRAP_CONTENT).apply {
+            topMargin = dp(8)
+        })
+
+        val gameButton = trayButton("Game", sub).apply {
             setOnClickListener {
                 syncAmountFromInput()
                 hideKeyboard()
+                status = "Checking app"
+                statusVersion += 1
+                updateUi()
                 checkActiveAppFromFloating()
                 sendBroadcast(
                     Intent(ControlService.ACTION_TOGGLE_REQUEST)
@@ -350,21 +360,11 @@ class FloatingControlService : Service() {
                 )
             }
         }
-        val stageButton = Button(this).apply {
-            text = "Stage"
-            textSize = 12f
-            typeface = Typeface.DEFAULT_BOLD
-            isAllCaps = false
-            minWidth = 0
-            minHeight = 0
-            includeFontPadding = false
-            setSingleLine(true)
-            setTextColor(sub)
-            background = rounded(Color.argb(10, 255, 255, 255), dp(12), border)
+        val stageButton = trayButton("Stage", sub).apply {
             setOnClickListener {
                 syncAmountFromInput()
                 hideKeyboard()
-                status = "Checking 1-1"
+                status = "Checking stage"
                 statusVersion += 1
                 val waitingVersion = statusVersion
                 updateUi()
@@ -380,8 +380,8 @@ class FloatingControlService : Service() {
                         .putExtra("amount", amount)
                 )
                 handler.postDelayed({
-                    if (expanded && status == "Checking 1-1" && statusVersion == waitingVersion) {
-                        status = "Open app"
+                    if (expanded && status == "Checking stage" && statusVersion == waitingVersion) {
+                        status = "Open NTE"
                         statusVersion += 1
                         updateUi()
                         startService(
@@ -393,33 +393,16 @@ class FloatingControlService : Service() {
                 }, 6000)
             }
         }
-        actions.addView(runButton, LinearLayout.LayoutParams(0, dp(46), 1f))
-        actions.addView(gameButton, LinearLayout.LayoutParams(0, dp(46), 1f).apply {
+        secondaryRow.addView(gameButton, LinearLayout.LayoutParams(0, dp(38), 1f))
+        secondaryRow.addView(stageButton, LinearLayout.LayoutParams(0, dp(38), 1f).apply {
             leftMargin = dp(8)
         })
-        actions.addView(stageButton, LinearLayout.LayoutParams(0, dp(46), 1f).apply {
-            leftMargin = dp(8)
-        })
-        body.addView(actions, LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, LinearLayout.LayoutParams.WRAP_CONTENT).apply {
-            topMargin = dp(10)
-        })
-
-        statusText = TextView(this).apply {
-            text = status
-            setTextColor(sub)
-            textSize = 11f
-            typeface = Typeface.MONOSPACE
-            maxLines = 1
-            gravity = Gravity.CENTER
-            background = rounded(Color.argb(6, 255, 255, 255), dp(9))
-            setPadding(dp(10), dp(6), dp(10), dp(6))
-        }
-        body.addView(statusText, LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, LinearLayout.LayoutParams.WRAP_CONTENT).apply {
+        body.addView(secondaryRow, LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, LinearLayout.LayoutParams.WRAP_CONTENT).apply {
             topMargin = dp(8)
         })
         card.addView(body, LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, LinearLayout.LayoutParams.WRAP_CONTENT))
 
-        root.addView(card, LinearLayout.LayoutParams(dp(292), LinearLayout.LayoutParams.WRAP_CONTENT))
+        root.addView(card, LinearLayout.LayoutParams(dp(trayWidthDp), LinearLayout.LayoutParams.WRAP_CONTENT))
     }
 
     private fun syncAmountFromInput() {
@@ -441,18 +424,22 @@ class FloatingControlService : Service() {
         runButton?.apply {
             text = if (isRunning) "Stop" else "Run"
             setTextColor(if (isRunning) coral else mint)
-            background = rounded(if (isRunning) coralDim else mintDim, dp(12), if (isRunning) coralBorder else mintBorder)
+            background = rounded(if (isRunning) coralDim else mintDim, dp(6), if (isRunning) coralBorder else mintBorder)
         }
-        statusText?.text = status
+        statusText?.apply {
+            text = status
+            setTextColor(statusColor(status))
+            background = rounded(statusBackground(status), dp(6), border)
+        }
     }
 
     private fun resizeFloatingWindow() {
         val currentParams = params ?: return
         currentParams.flags = floatingFlags()
         currentParams.softInputMode = WindowManager.LayoutParams.SOFT_INPUT_ADJUST_NOTHING
-        currentParams.width = if (expanded) dp(292) else dp(54)
+        currentParams.width = if (expanded) dp(trayWidthDp) else dp(bubbleSizeDp)
         currentParams.height = WindowManager.LayoutParams.WRAP_CONTENT
-        if (!expanded) currentParams.height = dp(54)
+        if (!expanded) currentParams.height = dp(bubbleSizeDp)
         clampPosition(currentParams)
         updateFloatingLayout()
     }
@@ -489,7 +476,7 @@ class FloatingControlService : Service() {
         if (currentParams != null) {
             val (screenWidth, _) = screenSize()
             currentParams.x = if (currentParams.x > screenWidth / 2) {
-                screenWidth - dp(72)
+                screenWidth - dp(bubbleSizeDp + 18)
             } else {
                 dp(8)
             }
@@ -546,8 +533,8 @@ class FloatingControlService : Service() {
 
     private fun clampPosition(currentParams: WindowManager.LayoutParams) {
         val (screenWidth, screenHeight) = screenSize()
-        val viewWidth = rootView?.width?.takeIf { it > 0 } ?: if (expanded) dp(292) else dp(54)
-        val viewHeight = rootView?.height?.takeIf { it > 0 } ?: if (expanded) dp(190) else dp(54)
+        val viewWidth = rootView?.width?.takeIf { it > 0 } ?: if (expanded) dp(trayWidthDp) else dp(bubbleSizeDp)
+        val viewHeight = rootView?.height?.takeIf { it > 0 } ?: if (expanded) dp(166) else dp(bubbleSizeDp)
         val bottomGestureReserve = if (screenHeight > screenWidth) dp(132) else dp(56)
         val maxX = (screenWidth - viewWidth - dp(8)).coerceAtLeast(dp(8))
         val maxY = (screenHeight - viewHeight - bottomGestureReserve).coerceAtLeast(dp(8))
@@ -571,6 +558,40 @@ class FloatingControlService : Service() {
     }
 
     private fun dp(value: Int): Int = (value * resources.displayMetrics.density).toInt()
+
+    private fun trayButton(label: String, color: Int): Button {
+        return Button(this).apply {
+            text = label
+            textSize = 12f
+            typeface = Typeface.DEFAULT_BOLD
+            isAllCaps = false
+            minWidth = 0
+            minHeight = 0
+            includeFontPadding = false
+            setSingleLine(true)
+            setTextColor(color)
+            background = rounded(Color.argb(10, 255, 255, 255), dp(6), border)
+        }
+    }
+
+    private fun statusColor(value: String): Int {
+        val normalized = value.lowercase()
+        return when {
+            normalized.contains("ready") || normalized.contains("stage 1-1") || normalized.contains("nte ready") -> mint
+            normalized.contains("stop") || normalized.contains("open") || normalized.contains("wrong") || normalized.contains("failed") || normalized.contains("access") -> coral
+            normalized.contains("check") || normalized.contains("scroll") || normalized.contains("running") -> fg
+            else -> sub
+        }
+    }
+
+    private fun statusBackground(value: String): Int {
+        val normalized = value.lowercase()
+        return when {
+            normalized.contains("ready") || normalized.contains("stage 1-1") || normalized.contains("nte ready") -> mintDim
+            normalized.contains("stop") || normalized.contains("open") || normalized.contains("wrong") || normalized.contains("failed") || normalized.contains("access") -> coralDim
+            else -> Color.argb(10, 255, 255, 255)
+        }
+    }
 
     private fun rounded(color: Int, radius: Int, strokeColor: Int? = null): GradientDrawable {
         return GradientDrawable().apply {

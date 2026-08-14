@@ -8,7 +8,7 @@ void main() {
 
     expect(find.text('Automation Hub'), findsOneWidget);
     expect(find.text("Owner's Selection"), findsOneWidget);
-    expect(find.text('NTE - 1-1 / 1-9'), findsOneWidget);
+    expect(find.text('NTE - 1-1'), findsOneWidget);
   });
 
   testWidgets('owner page opens from hub', (WidgetTester tester) async {
@@ -18,12 +18,13 @@ void main() {
     await tester.pumpAndSettle();
 
     expect(find.text("Owner's Selection"), findsOneWidget);
-    expect(find.text('City Stamina'), findsOneWidget);
+    expect(find.text('AMOUNT'), findsOneWidget);
     expect(find.text('1-1'), findsOneWidget);
-    expect(find.text('1-9'), findsOneWidget);
+    expect(find.text('1-9'), findsNothing);
     expect(find.text('Run'), findsOneWidget);
     expect(find.text('Check'), findsOneWidget);
     expect(find.text('Hub'), findsOneWidget);
+    expect(find.text('Floating'), findsOneWidget);
     expect(find.text('Send log'), findsOneWidget);
   });
 }
