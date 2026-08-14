@@ -60,7 +60,7 @@ class AppColors {
 }
 
 class AppInfo {
-  static const version = '1.0.29';
+  static const version = '1.0.30';
   static const androidApkUrl =
       'https://github.com/PHai237/City-Stamina-Spender/releases/latest/download/City.Stamina.Mobile.apk';
 }
@@ -175,9 +175,17 @@ class MobileDiagnosticsService {
     log.info(
       'Device info: ${info['manufacturer'] ?? ''} ${info['model'] ?? ''}, '
       '${info['screenWidth'] ?? '?'}x${info['screenHeight'] ?? '?'}, '
-      'dpi=${info['densityDpi'] ?? '?'}.',
+      'dpi=${info['densityDpi'] ?? '?'}, '
+      'active=${info['activePackage'] ?? '?'}, '
+      'raw=${info['rawActivePackage'] ?? '?'}, '
+      'useful=${info['lastUsefulPackage'] ?? '?'}.',
     );
     return info;
+  }
+
+  Future<String> readNativeDebugLog() async {
+    if (!Platform.isAndroid) return '';
+    return await _channel.invokeMethod<String>('getNativeDebugLog') ?? '';
   }
 
   Future<bool> isAccessibilityEnabled() async {
@@ -270,6 +278,7 @@ class MobileDiagnosticsService {
         p.join(tempDir.path, 'city-stamina-mobile-diagnostics-$stamp.txt'),
       );
       final fileLogText = await log.readLogText();
+      final nativeLogText = await readNativeDebugLog();
       final stageDebugFiles = await _recentStageDebugFiles();
       await reportFile.writeAsString(
         _buildReport(
@@ -277,6 +286,7 @@ class MobileDiagnosticsService {
           accessibilityEnabled: accessibilityEnabled,
           capture: capture,
           fileLogText: fileLogText,
+          nativeLogText: nativeLogText,
           stageDebugFiles: stageDebugFiles,
         ),
         flush: true,
@@ -312,6 +322,7 @@ class MobileDiagnosticsService {
       final deviceInfo = await getDeviceInfo();
       final accessibilityEnabled = await isAccessibilityEnabled();
       final fileLogText = await log.readLogText();
+      final nativeLogText = await readNativeDebugLog();
       final stageDebugFiles = await _recentStageDebugFiles();
       final tempDir = await getTemporaryDirectory();
       final stamp = DateTime.now()
@@ -327,6 +338,7 @@ class MobileDiagnosticsService {
           accessibilityEnabled: accessibilityEnabled,
           capture: null,
           fileLogText: fileLogText,
+          nativeLogText: nativeLogText,
           stageDebugFiles: stageDebugFiles,
           title: 'City Stamina Mobile log report',
           screenCaptureText: 'Not requested by Send log.',
@@ -401,6 +413,7 @@ class MobileDiagnosticsService {
     required bool accessibilityEnabled,
     required Map<String, dynamic>? capture,
     required String fileLogText,
+    required String nativeLogText,
     List<File> stageDebugFiles = const [],
     String title = 'City Stamina Mobile diagnostics',
     String screenCaptureText = 'failed',
@@ -444,7 +457,10 @@ class MobileDiagnosticsService {
     buffer
       ..writeln('')
       ..writeln('==== FILE LOG ====')
-      ..write(fileLogText.isEmpty ? 'empty\n' : fileLogText);
+      ..write(fileLogText.isEmpty ? 'empty\n' : fileLogText)
+      ..writeln('')
+      ..writeln('==== NATIVE LOG ====')
+      ..write(nativeLogText.isEmpty ? 'empty\n' : nativeLogText);
     return buffer.toString();
   }
 
@@ -1615,9 +1631,7 @@ class _OwnerSelectionPageState extends State<OwnerSelectionPage> {
 
       _log.info('Notification check: active app package=$activePackage.');
       await _controlController.setControlStatus(
-        _looksLikeGamePackage(activePackage)
-            ? 'NTE ready'
-            : 'App: $activePackage',
+        _looksLikeGamePackage(activePackage) ? 'NTE ready' : 'App active',
       );
     } catch (error) {
       _log.error('Notification check failed: $error');
@@ -1629,7 +1643,9 @@ class _OwnerSelectionPageState extends State<OwnerSelectionPage> {
     final normalized = packageName.toLowerCase();
     return normalized.contains('nte') ||
         normalized.contains('nevernes') ||
-        normalized.contains('netease');
+        normalized.contains('netease') ||
+        normalized.contains('hotta') ||
+        normalized == 'com.hottagames.nte';
   }
 }
 

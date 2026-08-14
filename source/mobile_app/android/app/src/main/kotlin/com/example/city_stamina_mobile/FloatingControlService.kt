@@ -329,6 +329,7 @@ class FloatingControlService : Service() {
                 syncAmountFromInput()
                 hideKeyboard()
                 isRunning = !isRunning
+                NativeDebugLog.write(this@FloatingControlService, "Floating Run tapped. running=$isRunning amount=$amount")
                 sendBroadcast(
                     Intent(ControlService.ACTION_TOGGLE_REQUEST)
                         .putExtra("type", "toggle")
@@ -353,6 +354,7 @@ class FloatingControlService : Service() {
                 statusVersion += 1
                 updateUi()
                 checkActiveAppFromFloating()
+                NativeDebugLog.write(this@FloatingControlService, "Floating Game tapped. amount=$amount")
                 sendBroadcast(
                     Intent(ControlService.ACTION_TOGGLE_REQUEST)
                         .putExtra("type", "game_check")
@@ -368,6 +370,7 @@ class FloatingControlService : Service() {
                 statusVersion += 1
                 val waitingVersion = statusVersion
                 updateUi()
+                NativeDebugLog.write(this@FloatingControlService, "Floating Stage tapped. amount=$amount")
                 startService(
                     Intent(this@FloatingControlService, ControlService::class.java)
                         .setAction(ControlService.ACTION_SET_STATUS)
@@ -446,14 +449,16 @@ class FloatingControlService : Service() {
 
     private fun checkActiveAppFromFloating() {
         val activePackage = AutomationAccessibilityService.bestForegroundPackage(packageName)
+        val debug = AutomationAccessibilityService.debugSnapshot(packageName)
         statusVersion += 1
         status = when {
             !AutomationAccessibilityService.isConnected -> "Enable Access"
             activePackage.isBlank() -> "No app"
             activePackage == packageName -> "Open NTE"
             looksLikeGamePackage(activePackage) -> "NTE ready"
-            else -> "App: $activePackage"
+            else -> "App active"
         }
+        NativeDebugLog.write(this, "Floating game check active=$activePackage status=$status debug=$debug")
         updateUi()
         startService(
             Intent(this, ControlService::class.java)
@@ -466,7 +471,9 @@ class FloatingControlService : Service() {
         val normalized = packageName.lowercase()
         return normalized.contains("nte") ||
             normalized.contains("nevernes") ||
-            normalized.contains("netease")
+            normalized.contains("netease") ||
+            normalized.contains("hotta") ||
+            normalized == "com.hottagames.nte"
     }
 
     private fun collapseToEdge() {

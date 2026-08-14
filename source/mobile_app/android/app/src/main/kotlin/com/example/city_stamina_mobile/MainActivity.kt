@@ -38,6 +38,7 @@ class MainActivity : FlutterActivity() {
     private var controlEventSink: EventChannel.EventSink? = null
     private var controlReceiver: BroadcastReceiver? = null
     private var pendingScreenCaptureResult: MethodChannel.Result? = null
+    private val pendingControlEvents = mutableListOf<Map<String, Any>>()
 
     override fun configureFlutterEngine(flutterEngine: FlutterEngine) {
         super.configureFlutterEngine(flutterEngine)
@@ -130,6 +131,7 @@ class MainActivity : FlutterActivity() {
                     result.success(null)
                 }
                 "getDeviceInfo" -> result.success(getDeviceInfo())
+                "getNativeDebugLog" -> result.success(NativeDebugLog.read(this))
                 "isAccessibilityEnabled" -> result.success(isAutomationAccessibilityEnabled())
                 "tapScreen" -> {
                     val x = call.argument<Number>("x")?.toFloat()
@@ -176,14 +178,15 @@ class MainActivity : FlutterActivity() {
                 override fun onListen(arguments: Any?, events: EventChannel.EventSink?) {
                     controlEventSink = events
                     registerControlReceiver()
+                    flushPendingControlEvents()
                 }
 
                 override fun onCancel(arguments: Any?) {
-                    unregisterControlReceiver()
                     controlEventSink = null
                 }
             }
         )
+        registerControlReceiver()
     }
 
     @Deprecated("Deprecated in Java")
@@ -224,13 +227,24 @@ class MainActivity : FlutterActivity() {
         controlReceiver = object : BroadcastReceiver() {
             override fun onReceive(context: Context?, intent: Intent?) {
                 if (intent?.action != ControlService.ACTION_TOGGLE_REQUEST) return
-                controlEventSink?.success(
-                    mapOf(
-                        "type" to (intent.getStringExtra("type") ?: "toggle"),
-                        "running" to intent.getBooleanExtra("running", false),
-                        "amount" to (intent.getStringExtra("amount") ?: "")
-                    )
+                val event = mapOf(
+                    "type" to (intent.getStringExtra("type") ?: "toggle"),
+                    "running" to intent.getBooleanExtra("running", false),
+                    "amount" to (intent.getStringExtra("amount") ?: ""),
+                    "stage" to (intent.getStringExtra("stage") ?: "")
                 )
+                NativeDebugLog.write(this@MainActivity, "Control event received: $event sink=${controlEventSink != null}")
+                val sink = controlEventSink
+                if (sink != null) {
+                    sink.success(event)
+                } else {
+                    synchronized(pendingControlEvents) {
+                        pendingControlEvents.add(event)
+                        while (pendingControlEvents.size > 8) {
+                            pendingControlEvents.removeAt(0)
+                        }
+                    }
+                }
             }
         }
 
@@ -240,6 +254,19 @@ class MainActivity : FlutterActivity() {
         } else {
             @Suppress("DEPRECATION")
             registerReceiver(controlReceiver, filter)
+        }
+    }
+
+    private fun flushPendingControlEvents() {
+        val sink = controlEventSink ?: return
+        val pending = synchronized(pendingControlEvents) {
+            val copy = pendingControlEvents.toList()
+            pendingControlEvents.clear()
+            copy
+        }
+        for (event in pending) {
+            NativeDebugLog.write(this, "Flushing pending control event: $event")
+            sink.success(event)
         }
     }
 
@@ -365,7 +392,9 @@ class MainActivity : FlutterActivity() {
             "accessibilityEnabled" to (isAutomationAccessibilityEnabled() && AutomationAccessibilityService.isConnected),
             "activePackage" to AutomationAccessibilityService.bestForegroundPackage(packageName),
             "rawActivePackage" to AutomationAccessibilityService.lastPackageName,
-            "lastExternalPackage" to AutomationAccessibilityService.lastExternalPackageName
+            "lastExternalPackage" to AutomationAccessibilityService.lastExternalPackageName,
+            "lastUsefulPackage" to AutomationAccessibilityService.lastUsefulPackageName,
+            "accessibilityDebug" to AutomationAccessibilityService.debugSnapshot(packageName)
         )
     }
 
