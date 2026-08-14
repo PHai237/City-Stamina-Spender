@@ -61,7 +61,7 @@ class AppColors {
 }
 
 class AppInfo {
-  static const version = '1.0.31';
+  static const version = '1.0.32';
   static const androidApkUrl =
       'https://github.com/PHai237/City-Stamina-Spender/releases/latest/download/City.Stamina.Mobile.apk';
 }
@@ -259,6 +259,7 @@ class MobileDiagnosticsService {
     File? reportFile;
     File? screenshotFile;
     File? bundleFile;
+    File? preservedBundleFile;
     try {
       final deviceInfo = await getDeviceInfo();
       final accessibilityEnabled = await isAccessibilityEnabled();
@@ -301,14 +302,27 @@ class MobileDiagnosticsService {
       );
 
       log.info('Uploading diagnostics to Discord.');
-      await _sendFiles(webhookUrl, [bundleFile]);
+      try {
+        await _sendFiles(webhookUrl, [bundleFile]);
+      } catch (error) {
+        preservedBundleFile = await _copyDebugZipToDocuments(bundleFile);
+        final preservedName = p.basename(preservedBundleFile.path);
+        log.error('Diagnostics upload failed: ${safeUserError(error)}');
+        throw StateError(
+          'Discord unreachable. Debug zip saved: $preservedName',
+        );
+      }
       log.info('Diagnostics uploaded to Discord.');
       return 'Diagnostics sent.';
     } finally {
       await _deleteIfExists(reportFile);
       await _deleteIfExists(screenshotFile);
       await _deleteIfExists(bundleFile);
-      log.info('Temporary diagnostics files deleted.');
+      log.info(
+        preservedBundleFile == null
+            ? 'Temporary diagnostics files deleted.'
+            : 'Temporary diagnostics files deleted. Preserved debug zip.',
+      );
     }
   }
 
@@ -323,6 +337,7 @@ class MobileDiagnosticsService {
 
     File? reportFile;
     File? bundleFile;
+    File? preservedBundleFile;
     try {
       final deviceInfo = await getDeviceInfo();
       final accessibilityEnabled = await isAccessibilityEnabled();
@@ -358,13 +373,26 @@ class MobileDiagnosticsService {
       );
 
       log.info('Uploading text log to Discord.');
-      await _sendFiles(webhookUrl, [bundleFile]);
+      try {
+        await _sendFiles(webhookUrl, [bundleFile]);
+      } catch (error) {
+        preservedBundleFile = await _copyDebugZipToDocuments(bundleFile);
+        final preservedName = p.basename(preservedBundleFile.path);
+        log.error('Text log upload failed: ${safeUserError(error)}');
+        throw StateError(
+          'Discord unreachable. Debug zip saved: $preservedName',
+        );
+      }
       log.info('Text log uploaded to Discord.');
       return 'Log sent.';
     } finally {
       await _deleteIfExists(reportFile);
       await _deleteIfExists(bundleFile);
-      log.info('Temporary log file deleted.');
+      log.info(
+        preservedBundleFile == null
+            ? 'Temporary log file deleted.'
+            : 'Temporary log file deleted. Preserved debug zip.',
+      );
     }
   }
 
@@ -537,6 +565,30 @@ class MobileDiagnosticsService {
     }
     log.info('Debug zip created: ${p.basename(zipFile.path)}.');
     return zipFile;
+  }
+
+  Future<File> _copyDebugZipToDocuments(File zipFile) async {
+    final dir = await getApplicationDocumentsDirectory();
+    final exportDir = Directory(p.join(dir.path, 'debug_exports'));
+    await exportDir.create(recursive: true);
+    await _trimDebugExports(exportDir);
+    final destination = File(p.join(exportDir.path, p.basename(zipFile.path)));
+    await zipFile.copy(destination.path);
+    log.info('Debug zip preserved after upload failure: ${destination.path}');
+    return destination;
+  }
+
+  Future<void> _trimDebugExports(Directory exportDir) async {
+    final files = <File>[];
+    await for (final entity in exportDir.list()) {
+      if (entity is File && p.extension(entity.path).toLowerCase() == '.zip') {
+        files.add(entity);
+      }
+    }
+    files.sort((a, b) => b.lastModifiedSync().compareTo(a.lastModifiedSync()));
+    for (final file in files.skip(5)) {
+      await _deleteIfExists(file);
+    }
   }
 
   Future<void> _addFileToZip(
@@ -1249,15 +1301,32 @@ Future<void> sendMobileLog(
   }
 }
 
-String formatUserError(Object error) {
+String formatUserError(Object error) => safeUserError(error);
+
+String safeUserError(Object error) {
   if (error is FormatException) return error.message;
   if (error is StateError) return error.message;
   if (error is PlatformException) return error.message ?? error.code;
-  return error
+  final sanitized = error
       .toString()
       .replaceFirst('Exception: ', '')
       .replaceFirst('Bad state: ', '')
-      .replaceFirst('FormatException: ', '');
+      .replaceFirst('FormatException: ', '')
+      .replaceAll(
+        RegExp(
+          r'https://(?:canary\.|ptb\.)?discord(?:app)?\.com/api/webhooks/[^\s,)\]]+',
+        ),
+        'https://discord.com/api/webhooks/[redacted]',
+      );
+  final lowered = sanitized.toLowerCase();
+  if (lowered.contains('network is unreachable') ||
+      lowered.contains('socketexception') ||
+      lowered.contains('failed host lookup') ||
+      lowered.contains('connection failed') ||
+      lowered.contains('discord.com')) {
+    return 'Discord unreachable. Check network/VPN, then try Send log again.';
+  }
+  return sanitized;
 }
 
 Future<String?> askWebhookUrl(BuildContext context) async {
