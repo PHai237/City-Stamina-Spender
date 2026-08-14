@@ -60,7 +60,7 @@ class AppColors {
 }
 
 class AppInfo {
-  static const version = '1.0.28';
+  static const version = '1.0.29';
   static const androidApkUrl =
       'https://github.com/PHai237/City-Stamina-Spender/releases/latest/download/City.Stamina.Mobile.apk';
 }
@@ -270,12 +270,14 @@ class MobileDiagnosticsService {
         p.join(tempDir.path, 'city-stamina-mobile-diagnostics-$stamp.txt'),
       );
       final fileLogText = await log.readLogText();
+      final stageDebugFiles = await _recentStageDebugFiles();
       await reportFile.writeAsString(
         _buildReport(
           deviceInfo: deviceInfo,
           accessibilityEnabled: accessibilityEnabled,
           capture: capture,
           fileLogText: fileLogText,
+          stageDebugFiles: stageDebugFiles,
         ),
         flush: true,
       );
@@ -285,6 +287,7 @@ class MobileDiagnosticsService {
         reportFile,
         if (screenshotFile != null && await screenshotFile.exists())
           screenshotFile,
+        ...stageDebugFiles,
       ]);
       log.info('Diagnostics uploaded to Discord.');
       return 'Diagnostics sent.';
@@ -309,6 +312,7 @@ class MobileDiagnosticsService {
       final deviceInfo = await getDeviceInfo();
       final accessibilityEnabled = await isAccessibilityEnabled();
       final fileLogText = await log.readLogText();
+      final stageDebugFiles = await _recentStageDebugFiles();
       final tempDir = await getTemporaryDirectory();
       final stamp = DateTime.now()
           .toIso8601String()
@@ -323,6 +327,7 @@ class MobileDiagnosticsService {
           accessibilityEnabled: accessibilityEnabled,
           capture: null,
           fileLogText: fileLogText,
+          stageDebugFiles: stageDebugFiles,
           title: 'City Stamina Mobile log report',
           screenCaptureText: 'Not requested by Send log.',
         ),
@@ -330,7 +335,7 @@ class MobileDiagnosticsService {
       );
 
       log.info('Uploading text log to Discord.');
-      await _sendFiles(webhookUrl, [reportFile]);
+      await _sendFiles(webhookUrl, [reportFile, ...stageDebugFiles]);
       log.info('Text log uploaded to Discord.');
       return 'Log sent.';
     } finally {
@@ -396,6 +401,7 @@ class MobileDiagnosticsService {
     required bool accessibilityEnabled,
     required Map<String, dynamic>? capture,
     required String fileLogText,
+    List<File> stageDebugFiles = const [],
     String title = 'City Stamina Mobile diagnostics',
     String screenCaptureText = 'failed',
   }) {
@@ -417,6 +423,18 @@ class MobileDiagnosticsService {
             ? screenCaptureText
             : const JsonEncoder.withIndent('  ').convert(capture),
       )
+      ..writeln('')
+      ..writeln('==== STAGE DEBUG FILES ====');
+
+    if (stageDebugFiles.isEmpty) {
+      buffer.writeln('none');
+    } else {
+      for (final file in stageDebugFiles) {
+        buffer.writeln('${p.basename(file.path)} (${file.lengthSync()} bytes)');
+      }
+    }
+
+    buffer
       ..writeln('')
       ..writeln('==== SESSION LOG ====');
 
@@ -453,6 +471,24 @@ class MobileDiagnosticsService {
         'Discord upload failed: ${response.statusCode} $body',
       );
     }
+  }
+
+  Future<List<File>> _recentStageDebugFiles() async {
+    final dir = await getApplicationDocumentsDirectory();
+    final debugDir = Directory(p.join(dir.path, 'stage_debug'));
+    if (!await debugDir.exists()) return [];
+
+    final files = <File>[];
+    await for (final entity in debugDir.list()) {
+      if (entity is! File) continue;
+      final name = p.basename(entity.path);
+      if (name.startsWith('latest_stage_') ||
+          name == 'latest_stage_report.txt') {
+        files.add(entity);
+      }
+    }
+    files.sort((a, b) => p.basename(a.path).compareTo(p.basename(b.path)));
+    return files;
   }
 
   Future<void> _deleteIfExists(File? file) async {
@@ -516,6 +552,14 @@ class MobileStageDetector {
     );
     final normalizedTemplate = img.grayscale(template);
     final match = _bestMatch(normalizedTitle, normalizedTemplate);
+    await _writeDebugArtifacts(
+      screenshotFile: screenshotFile,
+      screenshot: screenshot,
+      titleRegion: titleRegion,
+      normalizedTitle: normalizedTitle,
+      normalizedTemplate: normalizedTemplate,
+      match: match,
+    );
     log.info(
       'Stage 1-1 title score=${match.score.toStringAsFixed(3)} '
       'at x=${match.x} y=${match.y}.',
@@ -527,6 +571,68 @@ class MobileStageDetector {
       x: match.x,
       y: match.y,
     );
+  }
+
+  Future<void> _writeDebugArtifacts({
+    required File screenshotFile,
+    required img.Image screenshot,
+    required img.Image titleRegion,
+    required img.Image normalizedTitle,
+    required img.Image normalizedTemplate,
+    required _TemplateMatch match,
+  }) async {
+    try {
+      final dir = await getApplicationDocumentsDirectory();
+      final debugDir = Directory(p.join(dir.path, 'stage_debug'));
+      await debugDir.create(recursive: true);
+      await _clearStageDebugDir(debugDir);
+
+      await screenshotFile.copy(
+        p.join(debugDir.path, 'latest_stage_screen.png'),
+      );
+      await File(
+        p.join(debugDir.path, 'latest_stage_title_crop.png'),
+      ).writeAsBytes(img.encodePng(titleRegion), flush: true);
+      await File(
+        p.join(debugDir.path, 'latest_stage_title_normalized.png'),
+      ).writeAsBytes(img.encodePng(normalizedTitle), flush: true);
+      await File(
+        p.join(debugDir.path, 'latest_stage_template.png'),
+      ).writeAsBytes(img.encodePng(normalizedTemplate), flush: true);
+      await File(
+        p.join(debugDir.path, 'latest_stage_report.txt'),
+      ).writeAsString(
+        [
+          'Stage 1-1 detector debug',
+          'Created: ${DateTime.now().toIso8601String()}',
+          'Screenshot: ${screenshot.width}x${screenshot.height}',
+          'Title crop: ${titleRegion.width}x${titleRegion.height}',
+          'Normalized title: ${normalizedTitle.width}x${normalizedTitle.height}',
+          'Template: ${normalizedTemplate.width}x${normalizedTemplate.height}',
+          'Score: ${match.score.toStringAsFixed(4)}',
+          'Threshold: ${_threshold.toStringAsFixed(4)}',
+          'Matched: ${match.score >= _threshold}',
+          'Best x: ${match.x}',
+          'Best y: ${match.y}',
+        ].join('\n'),
+        flush: true,
+      );
+      log.info('Stage debug artifacts saved.');
+    } catch (error) {
+      log.warn('Could not save stage debug artifacts: $error');
+    }
+  }
+
+  Future<void> _clearStageDebugDir(Directory debugDir) async {
+    await for (final entity in debugDir.list()) {
+      if (entity is File) {
+        try {
+          await entity.delete();
+        } catch (_) {
+          // A stale debug file should not interrupt stage detection.
+        }
+      }
+    }
   }
 
   img.Image _cropTitleRegion(img.Image image) {
