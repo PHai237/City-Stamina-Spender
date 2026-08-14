@@ -21,8 +21,8 @@ const state = {
   isDetailVisible: false,
   isRunning: false,
   stageDropdownOpen: false,
-  currentVersion: "1.2.29",
-  latestVersion: "1.2.29",
+  currentVersion: "1.2.31",
+  latestVersion: "1.2.31",
   updateState: "checking",
   updateMessage: "Checking for updates...",
   updateProgress: 0,
@@ -43,6 +43,7 @@ function icon(name, size = 14) {
     left: '<path d="m15 18-6-6 6-6"></path>',
     chevron: '<path d="m6 9 6 6 6-6"></path>',
     download: '<path d="M12 3v12"></path><path d="m7 10 5 5 5-5"></path><path d="M5 21h14"></path>',
+    activity: '<path d="M22 12h-4l-3 8L9 4l-3 8H2"></path>',
   };
 
   return `<svg ${attrs}>${paths[name] || ""}</svg>`;
@@ -127,11 +128,11 @@ function header() {
 }
 
 function statusbar() {
-  const statusText = state.isRunning ? "NTE running" : "idle";
+  const statusText = state.isRunning ? "Running" : "Ready";
   const dotColor = state.isRunning ? "var(--warning)" : "var(--primary)";
   return `
     <div class="statusbar">
-      <span class="mono">v${escapeHtml(state.currentVersion)} - engine online</span>
+      <span class="mono">v${escapeHtml(state.currentVersion)} / engine ready</span>
       <span class="inline mono"><span class="dot" style="color:${dotColor}"></span>${statusText}</span>
     </div>
   `;
@@ -141,16 +142,16 @@ function hubView() {
   return `
     ${header()}
     <div class="content">
-      <div class="metrics">
-        ${metric("Automations", state.automationCount, "available", "zap")}
-        ${metric("Ready modules", state.readyModulesCount, "ready", "box")}
-        ${metric("Running now", state.runningNowCount, "active", "play")}
-        ${metric("Runs today", state.runsTodayCount, "today", "chart")}
+      <div class="hub-summary">
+        ${metric("Modules", state.automationCount, "available", "zap")}
+        ${metric("Ready", state.readyModulesCount, "loaded", "box")}
+        ${metric("Active", state.runningNowCount, "running", "activity")}
+        ${metric("Today", state.runsTodayCount, "runs", "chart")}
       </div>
 
       <section>
         <div class="section-title">
-          <span>Games</span>
+          <span>Automation</span>
           <div class="divider"></div>
         </div>
 
@@ -167,8 +168,13 @@ function hubView() {
               <div class="badge mono"><span class="dot"></span>Ready</div>
             </div>
 
-            <div class="stage-pill stage-pill-center">
-              <span>Stage 1-9 / 1-1</span>
+            <div class="module-row">
+              <span class="module-label">Stages</span>
+              <span class="module-value">1-1 / 1-9</span>
+            </div>
+            <div class="module-row">
+              <span class="module-label">Primary</span>
+              <span class="module-value">1-1 owner loop</span>
             </div>
           </button>
         </div>
@@ -198,7 +204,7 @@ function detailHeader() {
         <span class="separator">|</span>
         <div class="small-logo">${icon("zap", 10)}</div>
         <span class="brand-title">Owner's Selection</span>
-        <span class="app-chip mono">NTE</span>
+        <span class="app-chip mono">${state.isRunning ? "Running" : "Ready"}</span>
       </div>
       <div class="stage-dropdown ${state.stageDropdownOpen ? "open" : ""}">
         <button id="stageToggle" class="stage-select" ${state.isRunning ? "disabled" : ""}>
@@ -222,7 +228,16 @@ function controlCards() {
     : { label: "Elapsed", value: state.elapsed, note: "mm:ss" };
   return `
     <div class="detail-controls">
-      <div class="control-card">
+      <div class="control-card run-card">
+        <div class="control-label">Run control</div>
+        <div class="action-stack">
+          <button id="runButton" class="primary-action" ${state.isRunning ? "disabled" : ""}>${icon("play", 12)} Run</button>
+          <button id="stopButton" class="danger-action" ${state.isRunning ? "" : "disabled"}>${icon("square", 11)} Stop</button>
+        </div>
+        <div class="run-hint mono">F5 toggles automation</div>
+      </div>
+
+      <div class="control-card target-card">
         <div class="control-label">Target stamina</div>
         <input id="targetInput" class="target-input" inputmode="numeric" value="${escapeHtml(state.targetStamina)}" placeholder="Amount" ${state.isRunning ? "disabled" : ""} />
         <div class="metric-note">City Stamina</div>
@@ -238,14 +253,6 @@ function controlCards() {
         <div class="control-label">${escapeHtml(thirdMetric.label)}</div>
         <div class="big-value time-value">${escapeHtml(thirdMetric.value)}</div>
         <div class="metric-note">${escapeHtml(thirdMetric.note)}</div>
-      </div>
-
-      <div class="control-card action-card">
-        <div class="control-label">Actions</div>
-        <div class="action-stack">
-          <button id="runButton" class="primary-action" ${state.isRunning ? "disabled" : ""}>${icon("play", 12)} Run</button>
-          <button id="stopButton" class="danger-action" ${state.isRunning ? "" : "disabled"}>${icon("square", 11)} Stop</button>
-        </div>
       </div>
     </div>
   `;
@@ -273,24 +280,24 @@ function logPanel() {
           return `<div class="log-line ${type}"><span class="log-tag">${tag}</span><span>${escapeHtml(line)}</span></div>`;
         })
         .join("")
-    : '<span class="empty-log">Waiting for run...</span>';
+    : '<span class="empty-log">Waiting for run.</span>';
 
   return `
     <div class="log-area">
       <div class="log-head">
-        <span>Log</span>
+        <span>Run log</span>
         <div class="divider"></div>
         <button id="debugZipButton" class="debug-zip-button" ${state.isRunning ? "disabled" : ""}>${icon("download", 11)} Debug package</button>
         ${state.isRunning ? '<span class="running-indicator"><span class="dot"></span>Running</span>' : ""}
       </div>
+      ${state.selectedStage === "Stage 1-1" ? `
+        <div class="calibration-strip">
+          <span class="mono">Calibration</span>
+          <strong>${escapeHtml(state.calibrationStatus)}</strong>
+        </div>
+      ` : ""}
       <div class="log-wrap">
         <div id="logBox" class="log-box">${body}</div>
-        ${state.selectedStage === "Stage 1-1" ? `
-          <div class="calibration-corner">
-            <span>Calibration</span>
-            <strong>${escapeHtml(state.calibrationStatus)}</strong>
-          </div>
-        ` : ""}
       </div>
     </div>
   `;

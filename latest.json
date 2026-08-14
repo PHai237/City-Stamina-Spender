@@ -1,5 +1,5 @@
 {
-  "version": "1.2.30",
-  "url": "https://github.com/PHai237/City-Stamina-Spender/releases/download/v1.2.30/City.Stamina.Spender.exe",
-  "notes": "Verify Open Shop before running automation, add safer Stage 1-1 order confirmation, and polish mobile floating control."
+  "version": "1.2.31",
+  "url": "https://github.com/PHai237/City-Stamina-Spender/releases/download/v1.2.31/City.Stamina.Spender.exe",
+  "notes": "Refresh the desktop automation console UI with clearer run controls, denser module status, and cleaner diagnostics layout."
 }
