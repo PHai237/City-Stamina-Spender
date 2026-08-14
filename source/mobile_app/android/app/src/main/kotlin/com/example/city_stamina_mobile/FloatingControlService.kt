@@ -456,7 +456,7 @@ class FloatingControlService : Service() {
             activePackage.isBlank() -> "No app"
             activePackage == packageName -> "Open NTE"
             looksLikeGamePackage(activePackage) -> "NTE ready"
-            else -> "App active"
+            else -> "Open NTE"
         }
         NativeDebugLog.write(this, "Floating game check active=$activePackage status=$status debug=$debug")
         updateUi()

@@ -72,16 +72,22 @@ class AutomationAccessibilityService : AccessibilityService() {
             }
 
             val usefulAge = SystemClock.elapsedRealtime() - lastUsefulPackageSeenAt
-            if (lastUsefulPackageName.isNotBlank() && usefulAge <= RECENT_USEFUL_PACKAGE_MS) {
+            if (
+                lastUsefulPackageName.isUsefulPackage(appPackageName) &&
+                usefulAge <= RECENT_USEFUL_PACKAGE_MS
+            ) {
                 return lastUsefulPackageName
             }
 
             val externalAge = SystemClock.elapsedRealtime() - lastExternalPackageSeenAt
-            if (lastExternalPackageName.isNotBlank() && externalAge <= RECENT_EXTERNAL_PACKAGE_MS) {
+            if (
+                lastExternalPackageName.isUsefulPackage(appPackageName) &&
+                externalAge <= RECENT_EXTERNAL_PACKAGE_MS
+            ) {
                 return lastExternalPackageName
             }
 
-            return lastPackageName
+            return if (lastPackageName.isUsefulPackage(appPackageName)) lastPackageName else ""
         }
 
         fun debugSnapshot(appPackageName: String): Map<String, Any> {
@@ -101,12 +107,19 @@ class AutomationAccessibilityService : AccessibilityService() {
             val normalized = lowercase()
             return normalized != "android" &&
                 normalized != "com.android.launcher" &&
+                normalized != "com.android.settings" &&
                 normalized != "com.google.android.apps.nexuslauncher" &&
                 normalized != "com.oppo.launcher" &&
                 normalized != "com.coloros.launcher" &&
                 normalized != "com.android.systemui" &&
+                normalized != "com.oplus.games" &&
                 normalized != "com.google.android.inputmethod.latin" &&
+                !normalized.startsWith("com.coloros.") &&
+                !normalized.startsWith("com.oplus.") &&
+                !normalized.startsWith("com.android.") &&
                 !normalized.contains("launcher") &&
+                !normalized.contains("sidebar") &&
+                !normalized.contains("assistantscreen") &&
                 !normalized.contains("inputmethod")
         }
     }

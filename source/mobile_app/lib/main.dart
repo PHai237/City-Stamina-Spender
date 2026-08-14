@@ -61,7 +61,7 @@ class AppColors {
 }
 
 class AppInfo {
-  static const version = '1.0.32';
+  static const version = '1.0.33';
   static const androidApkUrl =
       'https://github.com/PHai237/City-Stamina-Spender/releases/latest/download/City.Stamina.Mobile.apk';
 }
@@ -336,11 +336,23 @@ class MobileDiagnosticsService {
     }
 
     File? reportFile;
+    File? screenshotFile;
     File? bundleFile;
     File? preservedBundleFile;
     try {
       final deviceInfo = await getDeviceInfo();
       final accessibilityEnabled = await isAccessibilityEnabled();
+      Map<String, dynamic>? capture;
+      String? screenCaptureText = 'No screen capture.';
+      try {
+        capture = await captureScreen();
+        final path = (capture['path'] ?? '').toString();
+        if (path.isNotEmpty) screenshotFile = File(path);
+        screenCaptureText = null;
+      } catch (error) {
+        screenCaptureText = 'Screen capture failed: ${safeUserError(error)}';
+        log.error('Send log screen capture failed: ${safeUserError(error)}');
+      }
       final fileLogText = await log.readLogText();
       final nativeLogText = await readNativeDebugLog();
       final stageDebugFiles = await _recentStageDebugFiles();
@@ -356,19 +368,19 @@ class MobileDiagnosticsService {
         _buildReport(
           deviceInfo: deviceInfo,
           accessibilityEnabled: accessibilityEnabled,
-          capture: null,
+          capture: capture,
           fileLogText: fileLogText,
           nativeLogText: nativeLogText,
           stageDebugFiles: stageDebugFiles,
           title: 'City Stamina Mobile log report',
-          screenCaptureText: 'Not requested by Send log.',
+          screenCaptureText: screenCaptureText,
         ),
         flush: true,
       );
       bundleFile = await _buildDebugZip(
         baseName: 'city-stamina-mobile-log-$stamp',
         reportFile: reportFile,
-        screenshotFile: null,
+        screenshotFile: screenshotFile,
         stageDebugFiles: stageDebugFiles,
       );
 
@@ -387,6 +399,7 @@ class MobileDiagnosticsService {
       return 'Log sent.';
     } finally {
       await _deleteIfExists(reportFile);
+      await _deleteIfExists(screenshotFile);
       await _deleteIfExists(bundleFile);
       log.info(
         preservedBundleFile == null
@@ -456,7 +469,7 @@ class MobileDiagnosticsService {
     required String nativeLogText,
     List<File> stageDebugFiles = const [],
     String title = 'City Stamina Mobile diagnostics',
-    String screenCaptureText = 'failed',
+    String? screenCaptureText = 'failed',
   }) {
     final buffer = StringBuffer()
       ..writeln(title)
@@ -473,7 +486,7 @@ class MobileDiagnosticsService {
       ..writeln('==== SCREEN CAPTURE ====')
       ..writeln(
         capture == null
-            ? screenCaptureText
+            ? (screenCaptureText ?? 'No screen capture.')
             : const JsonEncoder.withIndent('  ').convert(capture),
       )
       ..writeln('')
@@ -1760,7 +1773,7 @@ class _OwnerSelectionPageState extends State<OwnerSelectionPage> {
 
       _log.info('Notification check: active app package=$activePackage.');
       await _controlController.setControlStatus(
-        _looksLikeGamePackage(activePackage) ? 'NTE ready' : 'App active',
+        _looksLikeGamePackage(activePackage) ? 'NTE ready' : 'Open NTE',
       );
     } catch (error) {
       _log.error('Notification check failed: $error');
