@@ -3,6 +3,7 @@ import 'dart:convert';
 import 'dart:io';
 import 'dart:math';
 
+import 'package:archive/archive_io.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:http/http.dart' as http;
@@ -60,7 +61,7 @@ class AppColors {
 }
 
 class AppInfo {
-  static const version = '1.0.30';
+  static const version = '1.0.31';
   static const androidApkUrl =
       'https://github.com/PHai237/City-Stamina-Spender/releases/latest/download/City.Stamina.Mobile.apk';
 }
@@ -257,6 +258,7 @@ class MobileDiagnosticsService {
 
     File? reportFile;
     File? screenshotFile;
+    File? bundleFile;
     try {
       final deviceInfo = await getDeviceInfo();
       final accessibilityEnabled = await isAccessibilityEnabled();
@@ -291,19 +293,21 @@ class MobileDiagnosticsService {
         ),
         flush: true,
       );
+      bundleFile = await _buildDebugZip(
+        baseName: 'city-stamina-mobile-diagnostics-$stamp',
+        reportFile: reportFile,
+        screenshotFile: screenshotFile,
+        stageDebugFiles: stageDebugFiles,
+      );
 
       log.info('Uploading diagnostics to Discord.');
-      await _sendFiles(webhookUrl, [
-        reportFile,
-        if (screenshotFile != null && await screenshotFile.exists())
-          screenshotFile,
-        ...stageDebugFiles,
-      ]);
+      await _sendFiles(webhookUrl, [bundleFile]);
       log.info('Diagnostics uploaded to Discord.');
       return 'Diagnostics sent.';
     } finally {
       await _deleteIfExists(reportFile);
       await _deleteIfExists(screenshotFile);
+      await _deleteIfExists(bundleFile);
       log.info('Temporary diagnostics files deleted.');
     }
   }
@@ -318,6 +322,7 @@ class MobileDiagnosticsService {
     }
 
     File? reportFile;
+    File? bundleFile;
     try {
       final deviceInfo = await getDeviceInfo();
       final accessibilityEnabled = await isAccessibilityEnabled();
@@ -345,13 +350,20 @@ class MobileDiagnosticsService {
         ),
         flush: true,
       );
+      bundleFile = await _buildDebugZip(
+        baseName: 'city-stamina-mobile-log-$stamp',
+        reportFile: reportFile,
+        screenshotFile: null,
+        stageDebugFiles: stageDebugFiles,
+      );
 
       log.info('Uploading text log to Discord.');
-      await _sendFiles(webhookUrl, [reportFile, ...stageDebugFiles]);
+      await _sendFiles(webhookUrl, [bundleFile]);
       log.info('Text log uploaded to Discord.');
       return 'Log sent.';
     } finally {
       await _deleteIfExists(reportFile);
+      await _deleteIfExists(bundleFile);
       log.info('Temporary log file deleted.');
     }
   }
@@ -487,6 +499,54 @@ class MobileDiagnosticsService {
         'Discord upload failed: ${response.statusCode} $body',
       );
     }
+  }
+
+  Future<File> _buildDebugZip({
+    required String baseName,
+    required File reportFile,
+    required File? screenshotFile,
+    required List<File> stageDebugFiles,
+  }) async {
+    final tempDir = await getTemporaryDirectory();
+    final zipFile = File(p.join(tempDir.path, '$baseName.zip'));
+    final encoder = ZipFileEncoder()..create(zipFile.path);
+    try {
+      await _addFileToZip(
+        encoder,
+        reportFile,
+        'report/${p.basename(reportFile.path)}',
+      );
+      if (screenshotFile != null && await screenshotFile.exists()) {
+        await _addFileToZip(
+          encoder,
+          screenshotFile,
+          'capture/${p.basename(screenshotFile.path)}',
+        );
+      }
+      for (final file in stageDebugFiles) {
+        if (await file.exists()) {
+          await _addFileToZip(
+            encoder,
+            file,
+            'stage_debug/${p.basename(file.path)}',
+          );
+        }
+      }
+    } finally {
+      encoder.close();
+    }
+    log.info('Debug zip created: ${p.basename(zipFile.path)}.');
+    return zipFile;
+  }
+
+  Future<void> _addFileToZip(
+    ZipFileEncoder encoder,
+    File file,
+    String archivePath,
+  ) async {
+    encoder.addArchiveFile(
+      ArchiveFile(archivePath, await file.length(), await file.readAsBytes()),
+    );
   }
 
   Future<List<File>> _recentStageDebugFiles() async {
