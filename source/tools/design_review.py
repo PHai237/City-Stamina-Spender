@@ -12,6 +12,10 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parents[2]
 WEB_UI = ROOT / "source" / "shared" / "web_ui"
 OUT = ROOT / "source" / "_design_review"
+VIEWPORTS = {
+    "desktop": (960, 640),
+    "compact": (820, 560),
+}
 
 
 def run(command: list[str], check: bool = True) -> subprocess.CompletedProcess[str]:
@@ -68,40 +72,45 @@ def file_url(path: Path, query: str = "") -> str:
     return path.resolve().as_uri() + query
 
 
-def capture_previews() -> list[str]:
+def capture_previews() -> tuple[list[str], list[str]]:
     browser = chrome_path()
     if browser is None:
-        return ["Chrome/Edge was not found; could not capture desktop UI previews."]
+        return [], ["Chrome/Edge was not found; could not capture desktop UI previews."]
 
     OUT.mkdir(parents=True, exist_ok=True)
     index = WEB_UI / "index.html"
-    targets = {
-        "desktop-hub.png": file_url(index),
-        "desktop-detail.png": file_url(index, "?preview=detail"),
+    surfaces = {
+        "hub": file_url(index),
+        "detail": file_url(index, "?preview=detail"),
     }
     errors: list[str] = []
-    for name, url in targets.items():
-        shot = OUT / name
-        profile = OUT / f"profile-{name}"
-        if profile.exists():
+    shots: list[str] = []
+    for viewport, (width, height) in VIEWPORTS.items():
+        for surface, url in surfaces.items():
+            name = f"{viewport}-{surface}.png"
+            shot = OUT / name
+            profile = OUT / f"profile-{viewport}-{surface}"
+            if profile.exists():
+                shutil.rmtree(profile, ignore_errors=True)
+            result = run(
+                [
+                    browser,
+                    "--headless=new",
+                    "--disable-gpu",
+                    "--no-first-run",
+                    f"--user-data-dir={profile}",
+                    f"--window-size={width},{height}",
+                    f"--screenshot={shot}",
+                    url,
+                ],
+                check=False,
+            )
             shutil.rmtree(profile, ignore_errors=True)
-        result = run(
-            [
-                browser,
-                "--headless=new",
-                "--disable-gpu",
-                "--no-first-run",
-                f"--user-data-dir={profile}",
-                "--window-size=960,640",
-                f"--screenshot={shot}",
-                url,
-            ],
-            check=False,
-        )
-        shutil.rmtree(profile, ignore_errors=True)
-        if result.returncode != 0 or not shot.exists():
-            errors.append(f"Could not capture {name}: {result.stdout.strip()}")
-    return errors
+            if result.returncode != 0 or not shot.exists():
+                errors.append(f"Could not capture {name}: {result.stdout.strip()}")
+            else:
+                shots.append(str(shot.relative_to(ROOT)))
+    return shots, errors
 
 
 def css_value(pattern: str, css: str) -> int | None:
@@ -109,27 +118,46 @@ def css_value(pattern: str, css: str) -> int | None:
     return int(match.group(1)) if match else None
 
 
-def audit_css() -> list[str]:
+def css_values(pattern: str, css: str) -> list[int]:
+    return [int(value) for value in re.findall(pattern, css, re.S)]
+
+
+def css_metrics(css: str) -> dict[str, object]:
+    action_heights = css_values(r"\.primary-action,\s*\.danger-action\s*\{[^}]*height:\s*(\d+)px", css)
+    return {
+        "control_card_height": css_value(r"\.control-card\s*\{.*?height:\s*(\d+)px", css),
+        "run_stop_button_height": max(action_heights) if action_heights else None,
+        "rectangular_radii": sorted(
+            {
+                int(value)
+                for value in re.findall(r"border-radius:\s*(\d+)px", css)
+                if 8 < int(value) < 99
+            }
+        ),
+        "target_placeholder": "rgba(123, 132, 147, 0.46)"
+        if "target-input::placeholder" in css and "rgba(123, 132, 147, 0.46)" in css
+        else "needs-review",
+    }
+
+
+def audit_css() -> tuple[list[str], dict[str, object]]:
     css = (WEB_UI / "styles.css").read_text(encoding="utf-8")
     failures: list[str] = []
+    metrics = css_metrics(css)
 
-    rectangular_radii = [
-        int(value)
-        for value in re.findall(r"border-radius:\s*(\d+)px", css)
-        if 8 < int(value) < 99
-    ]
+    rectangular_radii = metrics["rectangular_radii"]
     if rectangular_radii:
         failures.append(
             "Rounded rectangular radius exceeds 8px: "
-            + ", ".join(str(value) for value in sorted(set(rectangular_radii)))
+            + ", ".join(str(value) for value in rectangular_radii)
             + "."
         )
 
-    control_height = css_value(r"\.control-card\s*\{.*?height:\s*(\d+)px", css)
+    control_height = metrics["control_card_height"]
     if control_height and control_height > 100:
         failures.append(f".control-card height is {control_height}px; compact desktop controls should stay <= 100px.")
 
-    action_height = css_value(r"\.primary-action,\s*\.danger-action\s*\{.*?height:\s*(\d+)px", css)
+    action_height = metrics["run_stop_button_height"]
     if action_height and action_height > 36:
         failures.append(f"Run/Stop buttons are {action_height}px tall; target 32-36px.")
 
@@ -139,22 +167,42 @@ def audit_css() -> list[str]:
     if re.search(r"\.module-row\s*\{[^}]*background:", css, re.S):
         failures.append(".module-row has its own background; metadata rows should not look like fake buttons.")
 
-    return failures
+    if re.search(r"\.target-input::placeholder\s*\{\s*color:\s*var\(--muted\)", css, re.S):
+        failures.append(".target-input placeholder uses --muted; it is too low-contrast for the primary amount field.")
+
+    return failures, metrics
 
 
 def main() -> int:
+    directions: dict[str, str] = {}
     print("Open Design directions:")
     for label in ("tech-utility", "modern-minimal"):
         direction = read_open_design_direction(label)
         if direction is None:
             print(f"- {label}: unavailable")
+            directions[label] = "unavailable"
         else:
-            print(f"- {label}: {direction.get('mood', '')}")
+            mood = str(direction.get("mood", ""))
+            print(f"- {label}: {mood}")
+            directions[label] = mood
 
-    failures = audit_css()
-    failures.extend(capture_previews())
+    failures, metrics = audit_css()
+    screenshots, preview_failures = capture_previews()
+    failures.extend(preview_failures)
+    report = {
+        "directions": directions,
+        "metrics": metrics,
+        "screenshots": screenshots,
+        "failures": failures,
+    }
+    OUT.mkdir(parents=True, exist_ok=True)
+    (OUT / "review.json").write_text(json.dumps(report, indent=2), encoding="utf-8")
 
     print(f"\nPreview output: {OUT}")
+    if screenshots:
+        print("Screenshots:")
+        for screenshot in screenshots:
+            print(f"- {screenshot}")
     if failures:
         print("\nDesign review failed:")
         for failure in failures:

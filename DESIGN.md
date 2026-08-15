@@ -23,6 +23,7 @@ The app is an operational automation tool, so the interface should feel precise,
 - Borders and shadows should separate layers without making the overlay feel bulky.
 - Metadata rows must read as metadata, not as fake buttons. Avoid boxed rows inside a larger card unless the row is independently interactive.
 - Primary actions may be visually clear, but must not become fat blocks inside compact panels. In desktop control cards, keep action buttons around 32-36 px tall.
+- Primary numeric fields should look editable even when empty. Placeholder text may be muted, but it must remain visibly readable against the card surface.
 
 ## Typography
 
@@ -47,7 +48,8 @@ The app is an operational automation tool, so the interface should feel precise,
 - Use segmented controls or compact toggles for future mode selection such as `1-1` versus `1-9`.
 - Avoid nested cards and page sections styled as floating cards.
 - Every layout must be checked for text clipping/wrapping on narrow portrait and landscape widths.
-- Every desktop UI change must be checked with `python source/tools/design_review.py`; inspect both hub and detail screenshots before saying the design is fixed.
+- Every desktop UI change must be checked with `python source/tools/design_review.py`; inspect hub and detail screenshots in desktop and compact viewports before saying the design is fixed.
+- The generated `source/_design_review/review.json` should stay failure-free and list the screenshots used for the check.
 
 ## Automation Feedback
 

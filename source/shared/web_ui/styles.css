@@ -157,9 +157,12 @@ button {
   border-color: rgba(62, 207, 178, 0.4);
 }
 
-.search-input::placeholder,
-.target-input::placeholder {
+.search-input::placeholder {
   color: var(--muted);
+}
+
+.target-input::placeholder {
+  color: rgba(123, 132, 147, 0.46);
 }
 
 .update-button,
