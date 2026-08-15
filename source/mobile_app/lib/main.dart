@@ -61,7 +61,7 @@ class AppColors {
 }
 
 class AppInfo {
-  static const version = '1.0.34';
+  static const version = '1.0.35';
   static const androidApkUrl =
       'https://github.com/PHai237/City-Stamina-Spender/releases/latest/download/City.Stamina.Mobile.apk';
 }
@@ -471,6 +471,8 @@ class MobileDiagnosticsService {
     String title = 'City Stamina Mobile diagnostics',
     String? screenCaptureText = 'failed',
   }) {
+    final sanitizedFileLogText = redactSensitiveText(fileLogText);
+    final sanitizedNativeLogText = redactSensitiveText(nativeLogText);
     final buffer = StringBuffer()
       ..writeln(title)
       ..writeln('Mobile version: ${AppInfo.version}')
@@ -510,10 +512,12 @@ class MobileDiagnosticsService {
     buffer
       ..writeln('')
       ..writeln('==== FILE LOG ====')
-      ..write(fileLogText.isEmpty ? 'empty\n' : fileLogText)
+      ..write(sanitizedFileLogText.isEmpty ? 'empty\n' : sanitizedFileLogText)
       ..writeln('')
       ..writeln('==== NATIVE LOG ====')
-      ..write(nativeLogText.isEmpty ? 'empty\n' : nativeLogText);
+      ..write(
+        sanitizedNativeLogText.isEmpty ? 'empty\n' : sanitizedNativeLogText,
+      );
     return buffer.toString();
   }
 
@@ -977,6 +981,7 @@ class OwnerAutomationController {
   Future<StageCheckResult> _verifyStageOneOne() async {
     File? screenshotFile;
     try {
+      await control.setControlStatus('Pick screen');
       final capture = await diagnostics.captureScreen();
       final path = (capture['path'] ?? '').toString();
       if (path.isEmpty) {
@@ -1256,6 +1261,8 @@ class _AutomationHubPageState extends State<AutomationHubPage> {
   }
 }
 
+bool _mobileLogSendInFlight = false;
+
 Future<void> sendMobileDiagnostics(
   BuildContext context,
   MobileDiagnosticsService diagnostics,
@@ -1291,6 +1298,14 @@ Future<void> sendMobileLog(
   MobileDiagnosticsService diagnostics,
 ) async {
   final messenger = ScaffoldMessenger.of(context);
+  if (_mobileLogSendInFlight) {
+    diagnostics.log.warn('Send log ignored: upload already in progress.');
+    messenger.showSnackBar(
+      const SnackBar(content: Text('Send log is already running.')),
+    );
+    return;
+  }
+  _mobileLogSendInFlight = true;
   try {
     if (!await diagnostics.hasWebhookConfigured()) {
       if (!context.mounted) return;
@@ -1303,14 +1318,18 @@ Future<void> sendMobileLog(
       await diagnostics.saveWebhookUrl(webhookUrl);
     }
 
-    messenger.showSnackBar(const SnackBar(content: Text('Sending log...')));
+    messenger.showSnackBar(
+      const SnackBar(content: Text('Sending log. Choose Entire screen.')),
+    );
     final message = await diagnostics.sendLogToDiscord();
     messenger.showSnackBar(SnackBar(content: Text(message)));
   } catch (error) {
-    diagnostics.log.error('Send log failed: $error');
+    diagnostics.log.error('Send log failed: ${redactSensitiveText('$error')}');
     messenger.showSnackBar(
       SnackBar(content: Text('Send log failed: ${formatUserError(error)}')),
     );
+  } finally {
+    _mobileLogSendInFlight = false;
   }
 }
 
@@ -1319,18 +1338,16 @@ String formatUserError(Object error) => safeUserError(error);
 String safeUserError(Object error) {
   if (error is FormatException) return error.message;
   if (error is StateError) return error.message;
-  if (error is PlatformException) return error.message ?? error.code;
-  final sanitized = error
-      .toString()
+  if (error is PlatformException) {
+    if (error.code.startsWith('SCREEN_CAPTURE')) {
+      return 'Choose Entire screen, then try again.';
+    }
+    return error.message ?? error.code;
+  }
+  final sanitized = redactSensitiveText(error.toString())
       .replaceFirst('Exception: ', '')
       .replaceFirst('Bad state: ', '')
-      .replaceFirst('FormatException: ', '')
-      .replaceAll(
-        RegExp(
-          r'https://(?:canary\.|ptb\.)?discord(?:app)?\.com/api/webhooks/[^\s,)\]]+',
-        ),
-        'https://discord.com/api/webhooks/[redacted]',
-      );
+      .replaceFirst('FormatException: ', '');
   final lowered = sanitized.toLowerCase();
   if (lowered.contains('network is unreachable') ||
       lowered.contains('socketexception') ||
@@ -1340,6 +1357,15 @@ String safeUserError(Object error) {
     return 'Discord unreachable. Check network/VPN, then try Send log again.';
   }
   return sanitized;
+}
+
+String redactSensitiveText(String value) {
+  return value.replaceAll(
+    RegExp(
+      r'https://(?:canary\.|ptb\.)?discord(?:app)?\.com/api/webhooks/[^\s,)\]]+',
+    ),
+    'https://discord.com/api/webhooks/[redacted]',
+  );
 }
 
 Future<String?> askWebhookUrl(BuildContext context) async {
@@ -1616,7 +1642,7 @@ class _OwnerSelectionPageState extends State<OwnerSelectionPage> {
       }
 
       messenger.showSnackBar(
-        const SnackBar(content: Text('Checking screen capture...')),
+        const SnackBar(content: Text('Choose Entire screen for capture.')),
       );
       await _diagnostics.checkScreenCapturePermission();
 

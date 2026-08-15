@@ -325,7 +325,7 @@ class FloatingControlService : Service() {
                 hideKeyboard()
                 isRunning = !isRunning
                 NativeDebugLog.write(this@FloatingControlService, "Floating Run tapped. running=$isRunning amount=$amount")
-                sendBroadcast(
+                sendControlEvent(
                     Intent(ControlService.ACTION_TOGGLE_REQUEST)
                         .putExtra("type", "toggle")
                         .putExtra("running", isRunning)
@@ -350,7 +350,7 @@ class FloatingControlService : Service() {
                 updateUi()
                 checkActiveAppFromFloating()
                 NativeDebugLog.write(this@FloatingControlService, "Floating Game tapped. amount=$amount")
-                sendBroadcast(
+                sendControlEvent(
                     Intent(ControlService.ACTION_TOGGLE_REQUEST)
                         .putExtra("type", "game_check")
                         .putExtra("amount", amount)
@@ -371,7 +371,7 @@ class FloatingControlService : Service() {
                         .setAction(ControlService.ACTION_SET_STATUS)
                         .putExtra(ControlService.KEY_STATUS, status)
                 )
-                sendBroadcast(
+                sendControlEvent(
                     Intent(ControlService.ACTION_TOGGLE_REQUEST)
                         .putExtra("type", "stage_check")
                         .putExtra("stage", "1-1")
@@ -405,11 +405,15 @@ class FloatingControlService : Service() {
 
     private fun syncAmountFromInput() {
         amount = amountInput?.text?.toString() ?: amount
-        sendBroadcast(
+        sendControlEvent(
             Intent(ControlService.ACTION_TOGGLE_REQUEST)
                 .putExtra("type", "amount")
                 .putExtra("amount", amount)
         )
+    }
+
+    private fun sendControlEvent(intent: Intent) {
+        sendBroadcast(intent.setPackage(packageName))
     }
 
     private fun updateUi() {

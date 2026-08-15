@@ -1,5 +1,5 @@
 {
-  "version": "1.2.35",
-  "url": "https://github.com/PHai237/City-Stamina-Spender/releases/download/v1.2.35/City.Stamina.Spender.exe",
-  "notes": "Improve the mobile floating control so it releases focus outside Amount input and stays less intrusive over the game."
+  "version": "1.2.36",
+  "url": "https://github.com/PHai237/City-Stamina-Spender/releases/download/v1.2.36/City.Stamina.Spender.exe",
+  "notes": "Fix mobile floating control events, prevent duplicate capture requests, and redact webhook URLs in debug reports."
 }

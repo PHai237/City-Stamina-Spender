@@ -57,7 +57,7 @@ class ControlService : Service() {
                 amount = RemoteInput.getResultsFromIntent(intent)?.getCharSequence(KEY_AMOUNT)?.toString()
                     ?: intent.getStringExtra(KEY_AMOUNT)
                     ?: ""
-                sendBroadcast(
+                sendControlEvent(
                     Intent(ACTION_TOGGLE_REQUEST)
                         .putExtra("type", "amount")
                         .putExtra("amount", amount)
@@ -70,7 +70,7 @@ class ControlService : Service() {
             }
             ACTION_TOGGLE -> {
                 isRunning = !isRunning
-                sendBroadcast(
+                sendControlEvent(
                     Intent(ACTION_TOGGLE_REQUEST)
                         .putExtra("type", "toggle")
                         .putExtra("running", isRunning)
@@ -78,7 +78,7 @@ class ControlService : Service() {
                 showNotification()
             }
             ACTION_CHECK -> {
-                sendBroadcast(
+                sendControlEvent(
                     Intent(ACTION_TOGGLE_REQUEST)
                         .putExtra("type", "check")
                 )
@@ -91,6 +91,10 @@ class ControlService : Service() {
     }
 
     override fun onBind(intent: Intent?): IBinder? = null
+
+    private fun sendControlEvent(intent: Intent) {
+        sendBroadcast(intent.setPackage(packageName))
+    }
 
     private fun showNotification() {
         startForeground(NOTIFICATION_ID, buildNotification())
