@@ -19,7 +19,6 @@ import android.view.View
 import android.view.WindowManager
 import android.view.inputmethod.EditorInfo
 import android.view.inputmethod.InputMethodManager
-import android.widget.Button
 import android.widget.EditText
 import android.widget.FrameLayout
 import android.widget.LinearLayout
@@ -45,9 +44,10 @@ class FloatingControlService : Service() {
     private var rootView: LinearLayout? = null
     private var params: WindowManager.LayoutParams? = null
     private var amountInput: EditText? = null
-    private var runButton: Button? = null
+    private var runButton: TextView? = null
     private var statusText: TextView? = null
     private var expanded = false
+    private var inputFocused = false
     private var isRunning = false
     private var amount = ""
     private var status = "Ready"
@@ -138,6 +138,7 @@ class FloatingControlService : Service() {
             gravity = Gravity.CENTER
             setOnTouchListener { _, event ->
                 if (event.action == MotionEvent.ACTION_OUTSIDE && expanded) {
+                    NativeDebugLog.write(this@FloatingControlService, "Floating outside touch: collapse.")
                     collapseToEdge()
                     true
                 } else {
@@ -157,6 +158,7 @@ class FloatingControlService : Service() {
         amountInput = null
         runButton = null
         statusText = null
+        inputFocused = false
     }
 
     private fun render() {
@@ -165,6 +167,7 @@ class FloatingControlService : Service() {
         amountInput = null
         runButton = null
         statusText = null
+        inputFocused = false
 
         if (expanded) {
             renderMenu(root)
@@ -280,12 +283,13 @@ class FloatingControlService : Service() {
 
         amountInput = EditText(this).apply {
             hint = "Amount"
-            setHintTextColor(muted)
+            setHintTextColor(sub)
             setTextColor(fg)
-            textSize = 18f
+            textSize = 17f
             typeface = Typeface.DEFAULT_BOLD
             setSingleLine(true)
             imeOptions = EditorInfo.IME_ACTION_DONE
+            inputType = android.text.InputType.TYPE_CLASS_NUMBER
             minWidth = 0
             setText(amount)
             setPadding(dp(10), 0, dp(10), 0)
@@ -294,35 +298,26 @@ class FloatingControlService : Service() {
                 if (actionId == EditorInfo.IME_ACTION_DONE) {
                     syncAmountFromInput()
                     hideKeyboard()
-                    clearFocus()
                     true
                 } else {
                     false
                 }
             }
             setOnClickListener {
-                requestFocus()
-                showKeyboard(this)
+                enterInputMode(this)
             }
             setOnFocusChangeListener { view, hasFocus ->
-                if (hasFocus) showKeyboard(view)
+                if (hasFocus) enterInputMode(view)
             }
         }
-        primaryRow.addView(amountInput, LinearLayout.LayoutParams(0, dp(44), 1f))
+        primaryRow.addView(amountInput, LinearLayout.LayoutParams(0, dp(40), 1f))
 
         val secondaryRow = LinearLayout(this).apply {
             orientation = LinearLayout.HORIZONTAL
             gravity = Gravity.CENTER
         }
-        runButton = Button(this).apply {
+        runButton = actionButton(if (isRunning) "Stop" else "Run", if (isRunning) coral else mint).apply {
             text = if (isRunning) "Stop" else "Run"
-            textSize = 13f
-            typeface = Typeface.DEFAULT_BOLD
-            isAllCaps = false
-            minWidth = 0
-            minHeight = 0
-            includeFontPadding = false
-            setSingleLine(true)
             setTextColor(if (isRunning) coral else mint)
             background = rounded(if (isRunning) coralDim else mintDim, dp(6), if (isRunning) coralBorder else mintBorder)
             setOnClickListener {
@@ -339,7 +334,7 @@ class FloatingControlService : Service() {
                 updateUi()
             }
         }
-        primaryRow.addView(runButton, LinearLayout.LayoutParams(dp(86), dp(44)).apply {
+        primaryRow.addView(runButton, LinearLayout.LayoutParams(dp(78), dp(40)).apply {
             leftMargin = dp(8)
         })
         body.addView(primaryRow, LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, LinearLayout.LayoutParams.WRAP_CONTENT).apply {
@@ -384,7 +379,7 @@ class FloatingControlService : Service() {
                 )
                 handler.postDelayed({
                     if (expanded && status == "Checking stage" && statusVersion == waitingVersion) {
-                        status = "Open NTE"
+                        status = "Need capture"
                         statusVersion += 1
                         updateUi()
                         startService(
@@ -396,8 +391,8 @@ class FloatingControlService : Service() {
                 }, 6000)
             }
         }
-        secondaryRow.addView(gameButton, LinearLayout.LayoutParams(0, dp(38), 1f))
-        secondaryRow.addView(stageButton, LinearLayout.LayoutParams(0, dp(38), 1f).apply {
+        secondaryRow.addView(gameButton, LinearLayout.LayoutParams(0, dp(34), 1f))
+        secondaryRow.addView(stageButton, LinearLayout.LayoutParams(0, dp(34), 1f).apply {
             leftMargin = dp(8)
         })
         body.addView(secondaryRow, LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, LinearLayout.LayoutParams.WRAP_CONTENT).apply {
@@ -439,7 +434,11 @@ class FloatingControlService : Service() {
     private fun resizeFloatingWindow() {
         val currentParams = params ?: return
         currentParams.flags = floatingFlags()
-        currentParams.softInputMode = WindowManager.LayoutParams.SOFT_INPUT_ADJUST_NOTHING
+        currentParams.softInputMode = if (inputFocused) {
+            WindowManager.LayoutParams.SOFT_INPUT_ADJUST_RESIZE
+        } else {
+            WindowManager.LayoutParams.SOFT_INPUT_ADJUST_NOTHING
+        }
         currentParams.width = if (expanded) dp(trayWidthDp) else dp(bubbleSizeDp)
         currentParams.height = WindowManager.LayoutParams.WRAP_CONTENT
         if (!expanded) currentParams.height = dp(bubbleSizeDp)
@@ -503,11 +502,20 @@ class FloatingControlService : Service() {
     private fun floatingFlags(): Int {
         val base = WindowManager.LayoutParams.FLAG_NOT_TOUCH_MODAL or
             WindowManager.LayoutParams.FLAG_WATCH_OUTSIDE_TOUCH
-        return if (expanded) {
+        return if (expanded && inputFocused) {
             base
         } else {
             base or WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE
         }
+    }
+
+    private fun enterInputMode(view: View) {
+        if (!inputFocused) {
+            inputFocused = true
+            resizeFloatingWindow()
+        }
+        view.requestFocus()
+        showKeyboard(view)
     }
 
     private fun showKeyboard(view: View) {
@@ -522,6 +530,10 @@ class FloatingControlService : Service() {
         val inputManager = getSystemService(Context.INPUT_METHOD_SERVICE) as InputMethodManager
         inputManager.hideSoftInputFromWindow(view.windowToken, 0)
         amountInput?.clearFocus()
+        if (inputFocused) {
+            inputFocused = false
+            resizeFloatingWindow()
+        }
     }
 
     private fun savePosition(x: Int, y: Int) {
@@ -566,18 +578,24 @@ class FloatingControlService : Service() {
 
     private fun dp(value: Int): Int = (value * resources.displayMetrics.density).toInt()
 
-    private fun trayButton(label: String, color: Int): Button {
-        return Button(this).apply {
+    private fun trayButton(label: String, color: Int): TextView {
+        return actionButton(label, color).apply {
+            background = rounded(Color.argb(10, 255, 255, 255), dp(6), border)
+        }
+    }
+
+    private fun actionButton(label: String, color: Int): TextView {
+        return TextView(this).apply {
             text = label
+            gravity = Gravity.CENTER
             textSize = 12f
             typeface = Typeface.DEFAULT_BOLD
-            isAllCaps = false
-            minWidth = 0
-            minHeight = 0
-            includeFontPadding = false
             setSingleLine(true)
+            includeFontPadding = false
             setTextColor(color)
-            background = rounded(Color.argb(10, 255, 255, 255), dp(6), border)
+            isClickable = true
+            isFocusable = true
+            setPadding(dp(8), 0, dp(8), 0)
         }
     }
 

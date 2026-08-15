@@ -61,7 +61,7 @@ class AppColors {
 }
 
 class AppInfo {
-  static const version = '1.0.33';
+  static const version = '1.0.34';
   static const androidApkUrl =
       'https://github.com/PHai237/City-Stamina-Spender/releases/latest/download/City.Stamina.Mobile.apk';
 }

@@ -1,5 +1,5 @@
 {
-  "version": "1.2.34",
-  "url": "https://github.com/PHai237/City-Stamina-Spender/releases/download/v1.2.34/City.Stamina.Spender.exe",
-  "notes": "Refine the desktop automation detail UI and add stricter Open Design review artifacts."
+  "version": "1.2.35",
+  "url": "https://github.com/PHai237/City-Stamina-Spender/releases/download/v1.2.35/City.Stamina.Spender.exe",
+  "notes": "Improve the mobile floating control so it releases focus outside Amount input and stays less intrusive over the game."
 }
