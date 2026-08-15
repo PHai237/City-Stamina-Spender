@@ -32,6 +32,7 @@ city-stamina-mobile-log-*.txt
 *.zip
 release_update_*/
 source/_design_city_stamina_hub/
+source/_design_review/
 
 # Local calibration screenshots
 stage_1_1_calibration/

@@ -1,6 +1,11 @@
 # City Stamina Spender Design System
 
-This design contract is inspired by Open Design's `linear-app` and `mission-control` systems. The app is an operational automation tool, so the interface should feel precise, calm, and easy to scan rather than decorative.
+This design contract is bound to Open Design directions that exist in the installed CLI:
+
+- `tech-utility` for the product posture: dense, operational, status-first, no marketing feel.
+- `modern-minimal` for restraint: hairline borders, compact chrome, controlled color, no bulky controls.
+
+The app is an operational automation tool, so the interface should feel precise, calm, and easy to scan rather than decorative.
 
 ## Product Feel
 
@@ -16,6 +21,8 @@ This design contract is inspired by Open Design's `linear-app` and `mission-cont
 - Avoid one-note purple/blue gradients, oversized cards, decorative glows, and marketing-style hero layouts.
 - Corners: 6-8 dp for panels and repeated items; circular only for the collapsed floating icon or icon-only controls.
 - Borders and shadows should separate layers without making the overlay feel bulky.
+- Metadata rows must read as metadata, not as fake buttons. Avoid boxed rows inside a larger card unless the row is independently interactive.
+- Primary actions may be visually clear, but must not become fat blocks inside compact panels. In desktop control cards, keep action buttons around 32-36 px tall.
 
 ## Typography
 
@@ -40,6 +47,7 @@ This design contract is inspired by Open Design's `linear-app` and `mission-cont
 - Use segmented controls or compact toggles for future mode selection such as `1-1` versus `1-9`.
 - Avoid nested cards and page sections styled as floating cards.
 - Every layout must be checked for text clipping/wrapping on narrow portrait and landscape widths.
+- Every desktop UI change must be checked with `python source/tools/design_review.py`; inspect both hub and detail screenshots before saying the design is fixed.
 
 ## Automation Feedback
 

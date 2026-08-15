@@ -29,6 +29,20 @@ const state = {
   isUpdateAvailable: false,
 };
 
+const previewMode = new URLSearchParams(window.location.search).get("preview");
+if (previewMode === "detail") {
+  Object.assign(state, {
+    isHubVisible: false,
+    isDetailVisible: true,
+    targetStamina: "",
+    ordersDetected: "0 / 0",
+    ordersDone: "0",
+    calibrationStatus: "Not calibrated",
+    logText: "Enter a valid City Stamina amount.",
+    updateState: "latest",
+  });
+}
+
 function icon(name, size = 14) {
   const attrs = `width="${size}" height="${size}" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"`;
   const paths = {
